@@ -5,7 +5,7 @@ import { analyzeCoupling } from './coupling.js';
 
 export function runInsights(graph, analyzedFiles, routes = []) {
   const circular = findCircularDependencies(graph);
-  const { deadExports, orphanFiles } = findDeadExports(graph, analyzedFiles);
+  const { deadExports } = findDeadExports(graph, analyzedFiles);
   const orphans = findOrphanFiles(graph, analyzedFiles, routes);
   const complexFiles = findComplexityIssues(analyzedFiles);
   const couplingIssues = analyzeCoupling(graph);
@@ -13,7 +13,7 @@ export function runInsights(graph, analyzedFiles, routes = []) {
   return {
     circular,
     deadExports,
-    orphans: [...orphanFiles, ...orphans],
+    orphans,
     complexFiles: complexFiles.complexFiles,
     couplingIssues: couplingIssues.highCoupling,
     // full data for detailed reports

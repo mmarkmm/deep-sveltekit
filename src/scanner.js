@@ -10,34 +10,75 @@ const DEFAULT_IGNORE = [
 ];
 
 function parseGitignore(content) {
-  return content
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'))
-    .map(pattern => {
-      // strip trailing slashes for directory matching
-      let p = pattern.replace(/\/+$/, '');
-      return p;
-    });
+  const patterns = [];
+  const negations = new Set();
+
+  for (const raw of content.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    // negation patterns (e.g., !.env.example)
+    if (line.startsWith('!')) {
+      negations.add(line.slice(1).replace(/\/+$/, '').replace(/^\/+/, ''));
+      continue;
+    }
+
+    let p = line.replace(/\/+$/, '');
+    // leading / means root-relative only — store as-is with a flag
+    const rootOnly = p.startsWith('/');
+    if (rootOnly) p = p.slice(1);
+
+    patterns.push({ pattern: p, rootOnly });
+  }
+
+  return { patterns, negations };
+}
+
+function matchSegment(relativePath, name, pattern, rootOnly) {
+  // exact name match (directory or file name)
+  if (pattern === name) return true;
+
+  // handle wildcards
+  if (pattern.includes('*')) {
+    const regex = new RegExp(
+      '^' + pattern.replace(/\./g, '\\.').replace(/\*\*/g, '{{GLOBSTAR}}').replace(/\*/g, '[^/]*').replace(/\{\{GLOBSTAR\}\}/g, '.*') + '$'
+    );
+    if (regex.test(name) || regex.test(relativePath)) return true;
+  }
+
+  // path-segment matching: pattern must match a complete directory segment
+  if (pattern.includes('/')) {
+    // pattern with / is a path pattern — match against relative path
+    if (rootOnly) {
+      return relativePath === pattern || relativePath.startsWith(pattern + '/');
+    }
+    return relativePath.includes(pattern + '/') || relativePath.endsWith(pattern)
+      || relativePath === pattern;
+  }
+
+  // simple name: match any path segment exactly
+  if (rootOnly) {
+    // root-only: first segment must match
+    return relativePath.split('/')[0] === pattern;
+  }
+
+  // match any segment in the path
+  const segments = relativePath.split('/');
+  return segments.includes(pattern);
 }
 
 function shouldIgnore(relativePath, name, ignorePatterns) {
-  // check against default ignores first
+  const { patterns, negations } = ignorePatterns;
+
+  // check against default ignores (exact segment match, not substring)
   if (DEFAULT_IGNORE.includes(name)) return true;
   if (name.startsWith('.') && name !== '.') return true;
 
-  for (const pattern of ignorePatterns) {
-    // simple glob matching - covers most .gitignore patterns
-    if (pattern === name) return true;
-    if (relativePath.includes(pattern)) return true;
+  // check negations first — if file is explicitly un-ignored, allow it
+  if (negations.has(name) || negations.has(relativePath)) return false;
 
-    // handle patterns with wildcards
-    if (pattern.includes('*')) {
-      const regex = new RegExp(
-        '^' + pattern.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$'
-      );
-      if (regex.test(name) || regex.test(relativePath)) return true;
-    }
+  for (const { pattern, rootOnly } of patterns) {
+    if (matchSegment(relativePath, name, pattern, rootOnly)) return true;
   }
   return false;
 }
@@ -47,7 +88,7 @@ async function loadGitignore(rootDir) {
     const content = await readFile(join(rootDir, '.gitignore'), 'utf-8');
     return parseGitignore(content);
   } catch {
-    return [];
+    return { patterns: [], negations: new Set() };
   }
 }
 

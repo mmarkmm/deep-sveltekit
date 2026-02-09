@@ -28,8 +28,8 @@ function detectAliases(frameworkConfig, allFilePaths) {
 export function resolveImport(importSource, fromFile, allFilePaths, aliases, knownDirs) {
   if (!importSource.startsWith('.') && !importSource.startsWith('/')) {
     for (const [alias, target] of Object.entries(aliases)) {
-      if (target === null) return { resolved: null, external: true };
       if (importSource === alias || importSource.startsWith(alias + '/')) {
+        if (target === null) return { resolved: null, external: true };
         const rest = importSource.slice(alias.length);
         importSource = target + rest;
         break;

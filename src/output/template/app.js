@@ -377,15 +377,12 @@
         html += '<div class="detail-section">';
         html += '<div class="detail-section-title">Calls (' + uniqueCalls.length + ')</div>';
         html += '<ul class="detail-list">';
-        uniqueCalls.slice(0, 50).forEach(function (c) {
+        uniqueCalls.forEach(function (c) {
           html += '<li class="detail-list-item"><span style="color:var(--text-muted)">\u2192</span> ' +
             '<span style="font-family:var(--font-mono)">' + escapeHtml(c.callee) + '</span>' +
             (c.caller ? '<span class="item-line">from ' + escapeHtml(c.caller) + '</span>' : '') +
             '</li>';
         });
-        if (uniqueCalls.length > 50) {
-          html += '<li class="detail-list-item" style="color:var(--text-muted)">...and ' + (uniqueCalls.length - 50) + ' more</li>';
-        }
         html += '</ul></div>';
       }
     }
@@ -1062,28 +1059,31 @@
 
     if (imps.length > 0) {
       html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">IMPORTS (' + imps.length + ')</div>';
-      imps.slice(0, 6).forEach(function (i) {
+      html += '<div style="max-height:150px;overflow-y:auto">';
+      imps.forEach(function (i) {
         var name = i.source.split('/').pop();
         html += '<div style="font-size:11px;color:var(--text-secondary);padding:1px 0">\u2190 ' + escapeHtml(name) + '</div>';
       });
-      if (imps.length > 6) html += '<div style="font-size:10px;color:var(--text-muted)">+' + (imps.length - 6) + ' more</div>';
+      html += '</div>';
     }
 
     if (usedBy.length > 0) {
       html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">USED BY (' + usedBy.length + ')</div>';
-      usedBy.slice(0, 6).forEach(function (p) {
+      html += '<div style="max-height:150px;overflow-y:auto">';
+      usedBy.forEach(function (p) {
         var name = p.split('/').pop();
         html += '<div style="font-size:11px;color:var(--accent-secondary);padding:1px 0">\u2192 ' + escapeHtml(name) + '</div>';
       });
-      if (usedBy.length > 6) html += '<div style="font-size:10px;color:var(--text-muted)">+' + (usedBy.length - 6) + ' more</div>';
+      html += '</div>';
     }
 
     if (fns.length > 0) {
-      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">FUNCTIONS</div>';
-      fns.slice(0, 8).forEach(function (fn) {
+      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">FUNCTIONS (' + fns.length + ')</div>';
+      html += '<div style="max-height:150px;overflow-y:auto">';
+      fns.forEach(function (fn) {
         html += '<div style="font-size:11px;color:var(--text-secondary);padding:1px 0;font-family:var(--font-mono)">' + escapeHtml(fn.name) + '()</div>';
       });
-      if (fns.length > 8) html += '<div style="font-size:10px;color:var(--text-muted)">+' + (fns.length - 8) + ' more</div>';
+      html += '</div>';
     }
 
     html += '</div>';
