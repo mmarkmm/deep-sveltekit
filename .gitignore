@@ -4,6 +4,7 @@ coverage/
 *.tgz
 .DS_Store
 .env
+.npmrc
 
 # generated reports
 *-report.html

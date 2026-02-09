@@ -35,8 +35,8 @@ function parseGitignore(content) {
 }
 
 function matchSegment(relativePath, name, pattern, rootOnly) {
-  // exact name match (directory or file name)
-  if (pattern === name) return true;
+  // exact name match (skip if rootOnly — leading '/' patterns only match at project root)
+  if (pattern === name && !rootOnly) return true;
 
   // handle wildcards
   if (pattern.includes('*')) {
