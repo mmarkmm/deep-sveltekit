@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tgz
+.DS_Store
+.env
+
+# generated reports
+*-report.html
+*-report.json

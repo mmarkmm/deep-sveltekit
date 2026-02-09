@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>deep-sveltekit — {{PROJECT_NAME}}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <style>{{STYLES}}</style>
+</head>
+<body>
+  <div id="app" class="app">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-logo">
+        <span class="logo-diamond">&#9670;</span>
+        <span>deep-sveltekit</span>
+        <span class="logo-version">v{{VERSION}}</span>
+      </div>
+
+      <div class="view-tabs">
+        <button class="view-tab active" data-view="graph">Graph</button>
+        <button class="view-tab" data-view="tree">Tree</button>
+        <button class="view-tab" data-view="routes">Routes</button>
+        <button class="view-tab" data-view="insights">Insights</button>
+      </div>
+
+      <div class="topbar-right">
+        <div class="topbar-stats">
+          <div class="topbar-stat">
+            <span class="stat-value" id="stat-files">0</span>
+            <span>files</span>
+          </div>
+          <div class="topbar-stat">
+            <span class="stat-value" id="stat-functions">0</span>
+            <span>functions</span>
+          </div>
+          <div class="topbar-stat">
+            <span class="stat-value" id="stat-deps">0</span>
+            <span>deps</span>
+          </div>
+        </div>
+
+        <div class="search-container">
+          <span class="search-icon">&#128269;</span>
+          <input type="text" class="search-input" id="search-input" placeholder="Search files, functions..." autocomplete="off" spellcheck="false">
+          <span class="search-kbd">/</span>
+          <div class="search-results hidden" id="search-results"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Explorer</span>
+        <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">&#9776;</button>
+      </div>
+      <div class="sidebar-content" id="sidebar-content"></div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main" id="main"></div>
+
+    <!-- Detail Panel -->
+    <div class="detail-panel" id="detail-panel">
+      <div class="detail-header">
+        <div class="detail-title" id="detail-title">File Details</div>
+        <button class="detail-close" id="detail-close" title="Close">&times;</button>
+      </div>
+      <div class="detail-body" id="detail-body"></div>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div class="bottombar">
+      <div class="bottombar-item">
+        <span>Files:</span>
+        <span class="bbar-value" id="bottom-files">0</span>
+      </div>
+      <div class="bottombar-item">
+        <span>Functions:</span>
+        <span class="bbar-value" id="bottom-functions">0</span>
+      </div>
+      <div class="bottombar-item">
+        <span>Dependencies:</span>
+        <span class="bbar-value" id="bottom-deps">0</span>
+      </div>
+      <div class="bottombar-spacer"></div>
+      <div class="bottombar-item">
+        <span>Framework:</span>
+        <span class="bbar-value" id="bottom-framework">generic</span>
+      </div>
+      <div class="bottombar-item" style="color:var(--text-muted)">
+        <span>&#9670; deep-sveltekit</span>
+      </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <script>{{DATA}}</script>
+  <script>{{SCRIPT}}</script>
+</body>
+</html>

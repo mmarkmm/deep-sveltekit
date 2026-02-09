@@ -1,0 +1,46 @@
+{
+  "name": "deep-sveltekit",
+  "version": "0.1.0",
+  "description": "Static analysis and architecture map for SvelteKit projects",
+  "type": "module",
+  "bin": {
+    "deep-sveltekit": "./bin/deep-sveltekit.js"
+  },
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "sveltekit",
+    "svelte",
+    "static-analysis",
+    "dependency-graph",
+    "architecture",
+    "dead-code",
+    "complexity",
+    "visualization"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "acorn": "^8.14.0",
+    "acorn-jsx": "^5.3.2",
+    "acorn-walk": "^8.3.4"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmarkmm/deep-sveltekit.git"
+  },
+  "homepage": "https://github.com/mmarkmm/deep-sveltekit"
+}
