@@ -1,7 +1,6 @@
 export function findCircularDependencies(graph) {
   const adj = new Map();
 
-  // build adjacency list from internal edges only
   for (const edge of graph.edges) {
     if (edge.external) continue;
     if (!adj.has(edge.source)) adj.set(edge.source, []);
@@ -23,7 +22,6 @@ export function findCircularDependencies(graph) {
       if (!visited.has(next)) {
         dfs(next);
       } else if (inStack.has(next)) {
-        // found a cycle - extract it from the stack
         const cycleStart = stack.indexOf(next);
         if (cycleStart !== -1) {
           const cycle = stack.slice(cycleStart);
@@ -43,19 +41,15 @@ export function findCircularDependencies(graph) {
     }
   }
 
-  // sort by length - shorter cycles are more problematic
   cycles.sort((a, b) => a.length - b.length);
   return cycles;
 }
 
 function addCycle(cycles, cycle) {
-  // normalize: rotate so smallest element is first (prevents duplicates)
   const normalized = normalizeCycle(cycle.slice(0, -1));
-  normalized.push(normalized[0]); // close it
+  normalized.push(normalized[0]);
 
   const key = normalized.join(' -> ');
-
-  // check for duplicate
   for (const existing of cycles) {
     const existingKey = existing.cycle.join(' -> ');
     if (existingKey === key) return;

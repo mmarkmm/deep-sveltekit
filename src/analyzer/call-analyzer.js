@@ -1,6 +1,5 @@
 import * as walk from 'acorn-walk';
 
-// Determine the enclosing function name from the ancestor chain
 function findEnclosingFunction(ancestors) {
   for (let i = ancestors.length - 2; i >= 0; i--) {
     const node = ancestors[i];
@@ -68,7 +67,6 @@ function resolveCallee(node) {
     return { name: parts.join('.'), type: parts.length > 1 ? 'member' : 'direct' };
   }
 
-  // something weird, just skip
   return null;
 }
 
@@ -78,11 +76,7 @@ export function extractCalls(ast) {
 
   walk.ancestor(ast, {
     CallExpression(node, _state, ancestors) {
-      let calleeNode = node.callee;
-
-      // unwrap: await is handled by the parent, but if the callee itself
-      // is wrapped we still resolve it the same way
-      const resolved = resolveCallee(calleeNode);
+      const resolved = resolveCallee(node.callee);
       if (!resolved) return;
 
       const caller = findEnclosingFunction([...ancestors]);

@@ -6,17 +6,14 @@ const INDEX_FILES = RESOLVE_EXTENSIONS.map(ext => 'index' + ext);
 function detectAliases(frameworkConfig, allFilePaths) {
   const aliases = {};
 
-  // detect if file paths include src/ prefix or not
   const hasLibDir = [...allFilePaths].some(p => p.startsWith('lib/'));
   const hasSrcLibDir = [...allFilePaths].some(p => p.startsWith('src/lib/'));
   const libPrefix = hasSrcLibDir ? 'src/lib' : hasLibDir ? 'lib' : 'src/lib';
 
-  // SvelteKit aliases
   aliases['$lib'] = libPrefix;
-  aliases['$app'] = null; // built-in, treat as external
-  aliases['$env'] = null; // built-in, treat as external
+  aliases['$app'] = null;
+  aliases['$env'] = null;
 
-  // common aliases - detect if src/ prefix is needed
   const hasSrcDir = [...allFilePaths].some(p => p.startsWith('src/'));
   const srcPrefix = hasSrcDir ? 'src' : '.';
   aliases['~'] = srcPrefix;
@@ -36,7 +33,6 @@ export function resolveImport(importSource, fromFile, allFilePaths, aliases, kno
       }
     }
 
-    // if the first path segment isn't a known project directory, it's an npm package
     if (!importSource.startsWith('.')) {
       const firstSeg = importSource.split('/')[0];
       if (!knownDirs || !knownDirs.has(firstSeg)) {
@@ -48,7 +44,6 @@ export function resolveImport(importSource, fromFile, allFilePaths, aliases, kno
     }
   }
 
-  // resolve relative to the importing file
   const fromDir = dirname(fromFile);
   let target;
 
@@ -58,22 +53,18 @@ export function resolveImport(importSource, fromFile, allFilePaths, aliases, kno
     target = importSource;
   }
 
-  // normalize separators
   target = target.replace(/\\/g, '/');
 
-  // try exact match first
   if (allFilePaths.has(target)) {
     return { resolved: target, external: false };
   }
 
-  // try with extensions
   for (const ext of RESOLVE_EXTENSIONS) {
     if (allFilePaths.has(target + ext)) {
       return { resolved: target + ext, external: false };
     }
   }
 
-  // try as directory with index file
   for (const idx of INDEX_FILES) {
     const indexPath = target + '/' + idx;
     if (allFilePaths.has(indexPath)) {
@@ -91,7 +82,6 @@ function getImportType(imp) {
 }
 
 function classifyFile(filePath, inDegree, analyzedFile) {
-  // entry points: bin files, main files, route files
   if (inDegree === 0) {
     if (filePath.includes('routes/') || filePath.includes('pages/')) return 'entry';
     if (filePath.match(/^(bin|scripts)\//)) return 'entry';
@@ -104,7 +94,6 @@ export function buildGraph(analyzedFiles, options = {}) {
   const allFilePaths = new Set(analyzedFiles.map(f => f.path));
   const aliases = detectAliases(options.framework, allFilePaths);
 
-  // collect top-level directory names for internal vs external detection
   const knownDirs = new Set();
   for (const f of analyzedFiles) {
     const first = f.path.split('/')[0];
@@ -147,7 +136,6 @@ export function buildGraph(analyzedFiles, options = {}) {
     }
   }
 
-  // second pass: build nodes
   for (const file of analyzedFiles) {
     const inDeg = inDegreeMap[file.path] || 0;
     const outDeg = outDegreeMap[file.path] || 0;
@@ -167,7 +155,6 @@ export function buildGraph(analyzedFiles, options = {}) {
     });
   }
 
-  // external package nodes
   if (options.includeExternal) {
     for (const pkg of externalPackages) {
       nodes.push({

@@ -3,9 +3,7 @@ const TEST_PATTERNS = /\.(test|spec|e2e)\.(js|ts|jsx|tsx)$|__tests__/;
 const ROUTE_PATTERNS = /\+page\.|\/\+server\.|\/\+layout\.|\/\+error\.|\/page\.(tsx|jsx)|\/route\.(ts|js)|\/layout\.(tsx|jsx)/;
 
 export function findDeadExports(graph, analyzedFiles) {
-  // build a map of what's imported from where: file -> Set of imported names
   const importedSpecifiers = new Map();
-  // also count how many files import each target
   const importerCount = new Map();
 
   for (const edge of graph.edges) {
@@ -24,7 +22,6 @@ export function findDeadExports(graph, analyzedFiles) {
       specs.add(name);
     }
 
-    // no specific specifiers = wildcard (import * as X, side-effect import)
     if (edge.specifiers.length === 0) {
       specs.add('*');
     }
@@ -36,19 +33,14 @@ export function findDeadExports(graph, analyzedFiles) {
     const exports = file.exports || [];
     if (!exports.length) continue;
 
-    // skip entry points — their exports face outward
     if (isEntryPoint(file.path)) continue;
 
     const imported = importedSpecifiers.get(file.path);
 
-    // file not imported by anyone → belongs in orphans list, NOT here
-    // dead exports only tracks exports within files that ARE part of the dependency graph
+    // not imported by anyone → belongs in orphans, not here
     if (!imported) continue;
-
-    // wildcard import (import * as X) → everything is considered used
     if (imported.has('*')) continue;
-
-    // Svelte components: default-imported → all named exports accessible via bind:this
+    // svelte components: default-imported means all named exports are accessible via bind:this
     if (file.path.endsWith('.svelte') && imported.has('default')) continue;
 
     const usedCount = imported.size;
@@ -57,11 +49,8 @@ export function findDeadExports(graph, analyzedFiles) {
     for (const exp of exports) {
       const name = exp.name;
 
-      // this export IS used
       if (name === 'default' && imported.has('default')) continue;
       if (imported.has(name)) continue;
-
-      // `default` alongside used named exports = convenience alias, not dead code
       if (name === 'default' && usedCount > 0) continue;
 
       deadExports.push({
@@ -78,7 +67,6 @@ export function findDeadExports(graph, analyzedFiles) {
 }
 
 export function findOrphanFiles(graph, analyzedFiles, routes = []) {
-  // files imported by at least one other file
   const imported = new Set();
   for (const edge of graph.edges) {
     if (!edge.external) {
@@ -114,11 +102,8 @@ function isEntryPoint(filePath) {
   if (TEST_PATTERNS.test(filePath)) return true;
   if (ROUTE_PATTERNS.test(filePath)) return true;
   if (filePath.endsWith('.d.ts')) return true;
-  // SvelteKit: .svelte files under routes/
   if (filePath.match(/routes\//) && filePath.endsWith('.svelte')) return true;
-  // SvelteKit: +page.server, +layout.server, +server files
   if (filePath.match(/\+page\.server\.|^\+layout\.server\./)) return true;
-  // hooks files
   if (filePath.match(/hooks\.(server|client)\.(js|ts)$/)) return true;
   if (filePath.match(/^(bin|scripts)\//)) return true;
   if (filePath.match(/(^|\/)index\.(js|ts|mjs)$/)) return true;

@@ -18,7 +18,6 @@ export async function generateHTML(reportData) {
     readTemplate('app.js'),
   ]);
 
-  // Strip file contents from the data payload - they're large and not needed in the browser
   const cleaned = {
     ...reportData,
     files: reportData.files.map(function (f) {
@@ -30,7 +29,7 @@ export async function generateHTML(reportData) {
   const dataScript = 'window.__DEEP_SVELTEKIT__ = ' + JSON.stringify(cleaned) + ';';
 
   const projectName = (reportData.meta && reportData.meta.name) || 'project';
-  const version = (reportData.meta && reportData.meta.version) || '0.1.0';
+  const version = (reportData.meta && reportData.meta.version) || '1.0.0';
 
   let html = template;
   html = html.replace('{{STYLES}}', styles);

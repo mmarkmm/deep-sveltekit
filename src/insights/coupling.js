@@ -1,10 +1,9 @@
 const HIGH_COUPLING_THRESHOLD = 15;
 
 export function analyzeCoupling(graph) {
-  const ca = {}; // afferent: who depends on me
-  const ce = {}; // efferent: who do I depend on
+  const ca = {};
+  const ce = {};
 
-  // initialize all nodes
   for (const node of graph.nodes) {
     if (node.type === 'external') continue;
     ca[node.id] = new Set();
@@ -31,7 +30,6 @@ export function analyzeCoupling(graph) {
     const ceCount = ce[node.id]?.size || 0;
     const total = caCount + ceCount;
 
-    // instability: 0 = maximally stable, 1 = maximally unstable
     const instability = total > 0 ? Math.round((ceCount / total) * 100) / 100 : 0;
 
     files.push({
@@ -54,7 +52,6 @@ export function analyzeCoupling(graph) {
       highCoupling.push({ file: node.id, total, reason });
     }
 
-    // files that are both highly depended on AND depend on many others
     if (caCount >= 5 && ceCount >= 5) {
       hubs.push({
         file: node.id,
@@ -64,7 +61,6 @@ export function analyzeCoupling(graph) {
     }
   }
 
-  // sort by total coupling descending
   files.sort((a, b) => (b.ca + b.ce) - (a.ca + a.ce));
   highCoupling.sort((a, b) => b.total - a.total);
   hubs.sort((a, b) => (b.dependents + b.dependencies) - (a.dependents + a.dependencies));

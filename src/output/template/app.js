@@ -18,14 +18,8 @@
     highlightedNodeId: null,
     sidebarCollapsed: false,
     searchOpen: false,
-    insightSections: { circular: true, deadExports: true, orphans: true, complexity: true }
+    insightSections: { circular: true, deadExports: true, orphans: true, complexity: true },
   };
-
-  var palette = [
-    '#58a6ff', '#3fb950', '#d29922', '#f85149', '#bc8cff',
-    '#f778ba', '#79c0ff', '#56d364', '#e3b341', '#ff7b72',
-    '#d2a8ff', '#ff9bce', '#a5d6ff', '#7ee787', '#f0c761'
-  ];
 
   var extIcons = {
     '.js': { icon: 'JS', cls: 'js' },
@@ -39,14 +33,38 @@
 
   var dirColorMap = {};
   var dirColorIndex = 0;
+  var GOLDEN_ANGLE = 137.508;
 
-  function getDirColor(filePath) {
-    var top = filePath.split('/')[0] || filePath;
-    if (!dirColorMap[top]) {
-      dirColorMap[top] = palette[dirColorIndex % palette.length];
+  function hslToHex(h, s, l) {
+    h /= 360; s /= 100; l /= 100;
+    var r, g, b;
+    if (s === 0) { r = g = b = l; } else {
+      var hue2rgb = function (p, q, t) {
+        if (t < 0) t += 1; if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      var p = 2 * l - q;
+      r = hue2rgb(p, q, h + 1/3);
+      g = hue2rgb(p, q, h);
+      b = hue2rgb(p, q, h - 1/3);
+    }
+    var toHex = function (x) { var hex = Math.round(x * 255).toString(16); return hex.length === 1 ? '0' + hex : hex; };
+    return '#' + toHex(r) + toHex(g) + toHex(b);
+  }
+
+  function getDirColor(key) {
+    if (!dirColorMap[key]) {
+      var hue = (dirColorIndex * GOLDEN_ANGLE) % 360;
+      var sat = 60 + (dirColorIndex % 3) * 12;
+      var lit = 58 + (dirColorIndex % 4) * 6;
+      dirColorMap[key] = hslToHex(hue, sat, lit);
       dirColorIndex++;
     }
-    return dirColorMap[top];
+    return dirColorMap[key];
   }
 
   function escapeHtml(s) {
@@ -162,7 +180,6 @@
   }
 
   function renderTreeNode(parent, node, depth, pathPrefix) {
-    // Sort: directories first, then files
     var dirs = Object.keys(node.children).sort();
     var files = node.files.slice().sort(function (a, b) {
       return a.path.localeCompare(b.path);
@@ -173,8 +190,7 @@
       var child = node.children[dirName];
       var isExpanded = state.expandedDirs.has(dirPath);
 
-      // Count total files in this subtree
-      var count = countFiles(child);
+      var ds = countDirStats(child);
 
       var item = document.createElement('div');
       item.className = 'tree-item directory';
@@ -183,7 +199,11 @@
         '<span class="tree-chevron ' + (isExpanded ? 'open' : '') + '">\u25B6</span>' +
         '<span class="tree-icon ' + (isExpanded ? 'dir-open' : 'dir') + '">' + (isExpanded ? '\uD83D\uDCC2' : '\uD83D\uDCC1') + '</span>' +
         '<span class="tree-label">' + escapeHtml(dirName) + '</span>' +
-        '<span class="tree-badge">' + count + '</span>';
+        '<span class="tree-metrics">' +
+          '<span class="tree-metric tm-fns" title="Functions">' + ds.fns + ' fn</span>' +
+          '<span class="tree-metric tm-lines" title="Lines">' + ds.lines + '</span>' +
+        '</span>' +
+        '<span class="tree-badge">' + ds.files + '</span>';
 
       item.addEventListener('click', function () {
         if (state.expandedDirs.has(dirPath)) {
@@ -210,6 +230,9 @@
       var iconInfo = extIcons[ext] || { icon: '\u2022', cls: '' };
       var cx = fileComplexity(f);
       var cxColor = cx < 10 ? '#3fb950' : cx < 25 ? '#d29922' : '#f85149';
+      var cxWidth = Math.min(cx, 60);
+      var fnCount = f.functions ? f.functions.length : 0;
+      var coupling = usedByMap[f.path] ? usedByMap[f.path].length : 0;
 
       var item = document.createElement('div');
       item.className = 'tree-item' + (state.selectedNode === f.path ? ' active' : '');
@@ -218,7 +241,13 @@
         '<span class="tree-indent"></span>' +
         '<span class="tree-icon ' + iconInfo.cls + '">' + iconInfo.icon + '</span>' +
         '<span class="tree-label">' + escapeHtml(fileName) + '</span>' +
-        '<span style="width:6px;height:6px;border-radius:50%;background:' + cxColor + ';flex-shrink:0;margin-left:auto;margin-right:4px;"></span>' +
+        '<span class="tree-metrics">' +
+          (fnCount > 0 ? '<span class="tree-metric tm-fns" title="' + fnCount + ' functions">' + fnCount + ' fn</span>' : '') +
+          (coupling > 0 ? '<span class="tree-metric tm-coupling" title="Imported by ' + coupling + ' files">' + coupling + '\u2191</span>' : '') +
+        '</span>' +
+        '<span class="tree-cx-bar" title="Complexity: ' + cx + '">' +
+          '<span class="tree-cx-fill" style="width:' + cxWidth + '%;background:' + cxColor + '"></span>' +
+        '</span>' +
         '<span class="tree-badge">' + f.lines + '</span>';
 
       item.addEventListener('click', function () {
@@ -235,6 +264,25 @@
       c += countFiles(node.children[k]);
     });
     return c;
+  }
+
+  function countDirStats(node) {
+    var stats = { files: 0, fns: 0, lines: 0, maxCx: 0 };
+    node.files.forEach(function (f) {
+      stats.files++;
+      stats.fns += (f.functions ? f.functions.length : 0);
+      stats.lines += f.lines || 0;
+      var cx = fileComplexity(f);
+      if (cx > stats.maxCx) stats.maxCx = cx;
+    });
+    Object.keys(node.children).forEach(function (k) {
+      var child = countDirStats(node.children[k]);
+      stats.files += child.files;
+      stats.fns += child.fns;
+      stats.lines += child.lines;
+      if (child.maxCx > stats.maxCx) stats.maxCx = child.maxCx;
+    });
+    return stats;
   }
 
   function expandToFile(filePath) {
@@ -275,7 +323,6 @@
 
     var html = '';
 
-    // Stats
     html += '<div class="detail-section">';
     html += '<div class="detail-section-title">Stats</div>';
     html += '<div class="detail-stats">';
@@ -363,6 +410,76 @@
       html += '</ul></div>';
     }
 
+    // Dependency Chain
+    var chainImports = [];
+    var chainUsedBy = [];
+    if (f.imports) {
+      f.imports.forEach(function (imp) {
+        var rp = resolveImportPath(filePath, imp.source);
+        if (fileMap[rp]) chainImports.push(rp);
+      });
+    }
+    usedBy.forEach(function (p) { if (fileMap[p]) chainUsedBy.push(p); });
+
+    if (chainImports.length > 0 || chainUsedBy.length > 0) {
+      html += '<div class="detail-section">';
+      html += '<div class="detail-section-title">Dependency Chain</div>';
+      html += '<div class="dep-chain">';
+
+      // Upstream: files this file imports (and their imports, 2 levels)
+      if (chainImports.length > 0) {
+        html += '<div class="dep-chain-group">';
+        html += '<div class="dep-chain-label">imports</div>';
+        chainImports.forEach(function (dep) {
+          var depImports = [];
+          var df = fileMap[dep];
+          if (df && df.imports) {
+            df.imports.forEach(function (imp) {
+              var rr = resolveImportPath(dep, imp.source);
+              if (fileMap[rr] && rr !== filePath) depImports.push(rr);
+            });
+          }
+          html += '<div class="dep-chain-node" data-navigate="' + escapeHtml(dep) + '">';
+          html += '<span class="dep-chain-arrow">\u2190</span>';
+          html += '<span class="dep-chain-file">' + escapeHtml(dep.split('/').pop()) + '</span>';
+          if (depImports.length > 0) {
+            html += '<span class="dep-chain-sub">\u2190 ' + depImports.slice(0, 3).map(function (d) { return escapeHtml(d.split('/').pop()); }).join(', ');
+            if (depImports.length > 3) html += ' +' + (depImports.length - 3);
+            html += '</span>';
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // Center: current file
+      html += '<div class="dep-chain-center">' + escapeHtml(f.path.split('/').pop()) + '</div>';
+
+      // Downstream: files that import this file (and what imports them, 2 levels)
+      if (chainUsedBy.length > 0) {
+        html += '<div class="dep-chain-group">';
+        html += '<div class="dep-chain-label">imported by</div>';
+        chainUsedBy.slice(0, 15).forEach(function (dep) {
+          var depUsedBy = usedByMap[dep] || [];
+          html += '<div class="dep-chain-node" data-navigate="' + escapeHtml(dep) + '">';
+          html += '<span class="dep-chain-arrow">\u2192</span>';
+          html += '<span class="dep-chain-file">' + escapeHtml(dep.split('/').pop()) + '</span>';
+          if (depUsedBy.length > 0) {
+            html += '<span class="dep-chain-sub">\u2192 ' + depUsedBy.slice(0, 3).map(function (d) { return escapeHtml(d.split('/').pop()); }).join(', ');
+            if (depUsedBy.length > 3) html += ' +' + (depUsedBy.length - 3);
+            html += '</span>';
+          }
+          html += '</div>';
+        });
+        if (chainUsedBy.length > 15) {
+          html += '<div class="dep-chain-more">+' + (chainUsedBy.length - 15) + ' more</div>';
+        }
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+    }
+
     // Calls
     if (f.calls && f.calls.length > 0) {
       var uniqueCalls = [];
@@ -389,7 +506,6 @@
 
     $detailBody.innerHTML = html;
 
-    // Bind navigation clicks
     $detailBody.querySelectorAll('[data-navigate]').forEach(function (el) {
       el.addEventListener('click', function () {
         var target = el.getAttribute('data-navigate');
@@ -415,7 +531,6 @@
       else if (p !== '.') dir.push(p);
     });
     var resolved = dir.join('/');
-    // Try with common extensions
     if (fileMap[resolved]) return resolved;
     var exts = ['.js', '.ts', '.svelte', '.jsx', '.tsx', '.mjs', '/index.js', '/index.ts'];
     for (var i = 0; i < exts.length; i++) {
@@ -522,764 +637,17 @@
 
   function renderMain() {
     switch (state.view) {
-      case 'graph': renderGraphView(); break;
       case 'tree': renderTreeView(); break;
+      case 'treemap': renderTreemapView(); break;
       case 'routes': renderRoutesView(); break;
       case 'insights': renderInsightsView(); break;
+      default: state.view = 'tree'; renderTreeView(); break;
     }
   }
 
-  var simulation = null;
+  function highlightGraphNode() {}
+  function clearGraphHighlight() {}
 
-  var LAYER_PALETTES = {
-    routes: ['#58a6ff','#79c0ff','#388bfd','#6cb6ff','#4493f8','#a5d6ff','#539bf5','#82b1ff'],
-    modules: ['#f78166','#ffa657','#d29922','#e3b341','#db6d28','#f0883e','#d4a72c','#e09b4f'],
-    core: ['#7ee787','#56d364','#3fb950','#aff5b4','#46954a','#8ddb8c','#57ab5a','#6bc46d']
-  };
-
-  function generateModuleColor(layer, index) {
-    var pal = LAYER_PALETTES[layer] || LAYER_PALETTES.core;
-    return pal[index % pal.length];
-  }
-
-  var LAYER_COLORS = {
-    routes: '#58a6ff',
-    modules: '#f78166',
-    core: '#7ee787'
-  };
-
-  var LAYER_LABELS = {
-    routes: 'Routes & Endpoints',
-    modules: 'Business Modules',
-    core: 'Core Libraries'
-  };
-
-  var LAYER_ICONS = {
-    routes: '\u2192',
-    modules: '\u25A0',
-    core: '\u2699'
-  };
-
-  var archExpandedModules = {};
-  var archCollapsedLayers = {};
-  var archHoveredModule = null;
-  var archModuleColorMap = {};
-
-  var ORG_DIRS = { client:1, server:1, components:1, stores:1, services:1, repositories:1, middleware:1, utils:1, types:1, assets:1, styles:1, config:1 };
-
-  function getModuleId(filePath) {
-    var parts = filePath.split('/');
-    if (parts[0] === 'src') parts = parts.slice(1);
-
-    if (parts[0] === 'routes') {
-      if (!parts[1] || parts[1].startsWith('+')) return 'routes/(root)';
-      if (parts[1] === 'api') {
-        if (parts[2] === 'modules' && parts[3]) return 'routes/api/' + parts[3];
-        if (!parts[2] || parts[2].startsWith('+')) return 'routes/api';
-        return 'routes/api/' + parts[2];
-      }
-      if (parts[2] === 'modules' && parts[3]) return 'routes/' + parts[1] + '/' + parts[3];
-      return 'routes/' + parts[1];
-    }
-
-    if (parts[0] === 'lib' && parts[1] === 'modules' && parts[2]) {
-      if (parts[3] && /^[a-z]/.test(parts[3]) && parts[3].indexOf('.') === -1 && !ORG_DIRS[parts[3]]) {
-        return 'modules/' + parts[2] + '/' + parts[3];
-      }
-      return 'modules/' + parts[2];
-    }
-
-    if (parts[0] === 'lib' && parts[1]) {
-      return 'lib/' + parts[1];
-    }
-
-    return parts[0] || 'root';
-  }
-
-  function getLayer(moduleId) {
-    if (moduleId.startsWith('routes/')) return 'routes';
-    if (moduleId.startsWith('modules/')) return 'modules';
-    return 'core';
-  }
-
-  var SIDE_CONFIG = {
-    client: { label: 'Client', color: '#58a6ff', icon: '\u25CB' },
-    server: { label: 'Server', color: '#f78166', icon: '\u25CF' },
-    shared: { label: 'Shared', color: '#7ee787', icon: '\u25D0' }
-  };
-
-  function getFileSide(filePath) {
-    var p = filePath.toLowerCase();
-    if (p.startsWith('src/')) p = p.substring(4);
-
-    if (p.includes('.server.') || p.includes('+server.')) return 'server';
-    if (p.match(/\/(server|repositories|services|middleware|db|cache)\//)) return 'server';
-    if (p.includes('.client.')) return 'client';
-    if (p.includes('/components/') || p.includes('/stores/') || p.includes('/composables/')) return 'client';
-    if (p.includes('/i18n/') || p.includes('/styles/') || p.includes('/assets/')) return 'client';
-    if (p.endsWith('.svelte')) return 'client';
-    if (p.match(/routes\/api\//)) return 'server';
-    if (p.match(/routes\//) && !p.includes('+server.')) return 'client';
-    if (p.includes('/shared/') || p.includes('/config/') || p.includes('/utils/') || p.includes('/types/')) return 'shared';
-    return 'shared';
-  }
-
-  function getModuleSide(files) {
-    var client = 0, server = 0, shared = 0;
-    files.forEach(function (fp) {
-      var s = getFileSide(fp);
-      if (s === 'client') client++;
-      else if (s === 'server') server++;
-      else shared++;
-    });
-    var total = client + server + shared;
-    if (client > 0 && server > 0) return { side: 'fullstack', client: client, server: server, shared: shared, total: total };
-    if (client > server && client > shared) return { side: 'client', client: client, server: server, shared: shared, total: total };
-    if (server > client && server > shared) return { side: 'server', client: client, server: server, shared: shared, total: total };
-    return { side: 'shared', client: client, server: server, shared: shared, total: total };
-  }
-
-  function buildArchData() {
-    var moduleMap = {};
-
-    data.files.forEach(function (f) {
-      var modId = getModuleId(f.path);
-      if (!moduleMap[modId]) {
-        moduleMap[modId] = {
-          id: modId,
-          files: [],
-          fileCount: 0,
-          functionCount: 0,
-          lineCount: 0,
-          totalComplexity: 0,
-          complexityCount: 0
-        };
-      }
-      var mod = moduleMap[modId];
-      mod.files.push(f.path);
-      mod.fileCount++;
-      mod.functionCount += (f.functions ? f.functions.length : 0);
-      mod.lineCount += (f.lines || 0);
-      var cx = fileComplexity(f);
-      if (cx > 0) {
-        mod.totalComplexity += cx;
-        mod.complexityCount++;
-      }
-    });
-
-    // compute side info for each module
-    var moduleIds = Object.keys(moduleMap);
-    moduleIds.forEach(function (modId) {
-      moduleMap[modId].sideInfo = getModuleSide(moduleMap[modId].files);
-    });
-
-    archModuleColorMap = {};
-
-    var crossEdges = {};
-    var allEdges = (data.graph && data.graph.edges) || [];
-    allEdges.forEach(function (e) {
-      var srcMod = getModuleId(e.source);
-      var tgtMod = getModuleId(e.target);
-      if (srcMod !== tgtMod) {
-        var key = srcMod + '->' + tgtMod;
-        crossEdges[key] = (crossEdges[key] || 0) + 1;
-      }
-    });
-
-    var moduleEdges = [];
-    Object.keys(crossEdges).forEach(function (key) {
-      var parts = key.split('->');
-      moduleEdges.push({ source: parts[0], target: parts[1], weight: crossEdges[key] });
-    });
-
-    var topDeps = {};
-    moduleIds.forEach(function (modId) {
-      var outgoing = {};
-      var incoming = {};
-      moduleEdges.forEach(function (e) {
-        if (e.source === modId) outgoing[e.target] = (outgoing[e.target] || 0) + e.weight;
-        if (e.target === modId) incoming[e.source] = (incoming[e.source] || 0) + e.weight;
-      });
-      var outArr = Object.keys(outgoing).map(function (k) { return { id: k, count: outgoing[k] }; });
-      var inArr = Object.keys(incoming).map(function (k) { return { id: k, count: incoming[k] }; });
-      outArr.sort(function (a, b) { return b.count - a.count; });
-      inArr.sort(function (a, b) { return b.count - a.count; });
-      topDeps[modId] = { outgoing: outArr.slice(0, 5), incoming: inArr.slice(0, 5) };
-    });
-
-    var layers = { routes: [], modules: [], core: [] };
-    moduleIds.forEach(function (modId) {
-      var layer = getLayer(modId);
-      layers[layer].push(moduleMap[modId]);
-    });
-
-    // within each layer, group by side then sort by fileCount
-    Object.keys(layers).forEach(function (layer) {
-      layers[layer].sort(function (a, b) {
-        var sideOrder = { server: 0, client: 1, fullstack: 2, shared: 3 };
-        var sa = sideOrder[a.sideInfo.side] || 3;
-        var sb = sideOrder[b.sideInfo.side] || 3;
-        if (sa !== sb) return sa - sb;
-        return b.fileCount - a.fileCount;
-      });
-    });
-
-    // assign colors per-layer so each layer has its own distinct hue family
-    ['routes', 'modules', 'core'].forEach(function (lk) {
-      layers[lk].forEach(function (mod, idx) {
-        archModuleColorMap[mod.id] = generateModuleColor(lk, idx);
-      });
-    });
-
-    return {
-      modules: moduleMap,
-      moduleIds: moduleIds,
-      moduleEdges: moduleEdges,
-      topDeps: topDeps,
-      layers: layers
-    };
-  }
-
-  function renderGraphView() {
-    renderGraphLevel();
-  }
-
-  function renderGraphLevel() {
-    var ad = buildArchData();
-
-    if (!data.files || data.files.length === 0) {
-      $main.innerHTML =
-        '<div class="empty-state"><div class="empty-state-icon">\u25C7</div>' +
-        '<div class="empty-state-title">No file data</div>' +
-        '<div class="empty-state-desc">No files were found to visualize.</div></div>';
-      return;
-    }
-
-    var totalFiles = data.files.length;
-    var html = '<div class="arch-map" id="arch-map">';
-
-    html += '<div class="arch-toolbar">';
-    html += '<input class="arch-search" id="arch-search" placeholder="Filter modules..." type="text" />';
-    html += '<span class="arch-file-total">' + totalFiles + ' files</span>';
-    html += '</div>';
-
-    var layerOrder = ['routes', 'modules', 'core'];
-    layerOrder.forEach(function (layerKey) {
-      var mods = ad.layers[layerKey];
-      if (mods.length === 0) return;
-
-      var layerFileCount = 0;
-      var layerClient = 0, layerServer = 0, layerShared = 0;
-      mods.forEach(function (m) {
-        layerFileCount += m.fileCount;
-        layerClient += m.sideInfo.client;
-        layerServer += m.sideInfo.server;
-        layerShared += m.sideInfo.shared;
-      });
-
-      var isCollapsed = !!archCollapsedLayers[layerKey];
-      html += '<div class="arch-layer' + (isCollapsed ? ' arch-layer-collapsed' : '') + '" data-layer="' + layerKey + '">';
-      html += '<div class="arch-layer-header" data-layer-toggle="' + layerKey + '">';
-      html += '<span class="arch-layer-chevron">' + (isCollapsed ? '\u25B6' : '\u25BC') + '</span>';
-      html += '<span class="arch-layer-icon">' + LAYER_ICONS[layerKey] + '</span>';
-      html += '<span class="arch-layer-title">' + LAYER_LABELS[layerKey] + '</span>';
-      html += '<span class="arch-layer-count">' + mods.length + ' modules \u00B7 ' + layerFileCount + ' files</span>';
-      html += '<span class="arch-layer-sides">';
-      if (layerServer > 0) html += '<span class="arch-side-pill arch-side-pill-server">' + layerServer + ' server</span>';
-      if (layerClient > 0) html += '<span class="arch-side-pill arch-side-pill-client">' + layerClient + ' client</span>';
-      if (layerShared > 0) html += '<span class="arch-side-pill arch-side-pill-shared">' + layerShared + ' shared</span>';
-      html += '</span>';
-      html += '</div>';
-      html += '<div class="arch-layer-cards" style="' + (isCollapsed ? 'display:none' : '') + '">';
-
-      mods.forEach(function (mod) {
-        var color = archModuleColorMap[mod.id];
-        var idParts = mod.id.split('/');
-        var label;
-        if (idParts.length >= 3) {
-          label = idParts.slice(1).join('/');
-        } else {
-          label = idParts.pop() || mod.id;
-        }
-        var avgCx = mod.complexityCount > 0 ? Math.round(mod.totalComplexity / mod.complexityCount) : 0;
-        var cxColor = avgCx < 10 ? '#3fb950' : avgCx < 20 ? '#d29922' : '#f85149';
-        var isExpanded = !!archExpandedModules[mod.id];
-        var deps = ad.topDeps[mod.id];
-        var depsText = '';
-        if (deps && deps.outgoing.length > 0) {
-          depsText = deps.outgoing.slice(0, 3).map(function (dep) {
-            return dep.id.split('/').pop();
-          }).join(', ');
-        }
-
-        var si = mod.sideInfo;
-        var sideLabel = si.side === 'fullstack' ? 'Full Stack' : SIDE_CONFIG[si.side] ? SIDE_CONFIG[si.side].label : si.side;
-        var sideCls = si.side;
-
-        html += '<div class="arch-card' + (isExpanded ? ' expanded' : '') + ' arch-side-' + sideCls + '" data-module="' + escapeHtml(mod.id) + '" style="border-left-color:' + color + '">';
-        html += '<div class="arch-card-header">';
-        html += '<span class="arch-card-name">' + escapeHtml(label) + '</span>';
-        html += '<span class="arch-card-side arch-side-badge-' + sideCls + '">' + escapeHtml(sideLabel) + '</span>';
-        html += '<span class="arch-card-complexity" style="background:' + cxColor + '" title="Avg complexity: ' + avgCx + '"></span>';
-        html += '</div>';
-        html += '<div class="arch-card-stats">';
-        html += '<span>' + mod.fileCount + ' files</span>';
-        html += '<span class="arch-card-dot">\u00B7</span>';
-        html += '<span>' + mod.functionCount + ' fn</span>';
-        html += '</div>';
-        // client/server split bar
-        if (si.client > 0 || si.server > 0) {
-          var cPct = Math.round((si.client / si.total) * 100);
-          var sPct = Math.round((si.server / si.total) * 100);
-          var shPct = 100 - cPct - sPct;
-          html += '<div class="arch-card-split" title="Client: ' + si.client + ' / Server: ' + si.server + ' / Shared: ' + si.shared + '">';
-          if (sPct > 0) html += '<span class="split-server" style="width:' + sPct + '%"></span>';
-          if (cPct > 0) html += '<span class="split-client" style="width:' + cPct + '%"></span>';
-          if (shPct > 0) html += '<span class="split-shared" style="width:' + shPct + '%"></span>';
-          html += '</div>';
-        }
-        if (depsText) {
-          html += '<div class="arch-card-deps">\u2192 ' + escapeHtml(depsText) + '</div>';
-        }
-
-        if (isExpanded) {
-          html += '<div class="arch-card-files">';
-          var sortedFiles = mod.files.slice().sort(function (a, b) {
-            var fa = fileMap[a], fb = fileMap[b];
-            var la = fa ? fa.lines : 0, lb = fb ? fb.lines : 0;
-            return lb - la;
-          });
-          sortedFiles.forEach(function (fp) {
-            var f = fileMap[fp];
-            var fname = fp.split('/').pop();
-            var lines = f ? f.lines : 0;
-            var fnCount = f ? f.functions.length : 0;
-            var cx = fileComplexity(f || {});
-            var fCxColor = cx < 10 ? '#3fb950' : cx < 20 ? '#d29922' : '#f85149';
-            var fSide = getFileSide(fp);
-            html += '<div class="arch-file-item" data-file="' + escapeHtml(fp) + '">';
-            html += '<span class="arch-file-cx" style="background:' + fCxColor + '"></span>';
-            html += '<span class="arch-file-name">' + escapeHtml(fname) + '</span>';
-            html += '<span class="arch-file-side arch-side-badge-' + fSide + '">' + SIDE_CONFIG[fSide].label + '</span>';
-            html += '<span class="arch-file-meta">' + lines + 'L / ' + fnCount + 'fn</span>';
-            html += '</div>';
-          });
-          html += '</div>';
-        }
-
-        html += '</div>';
-      });
-
-      html += '</div></div>';
-    });
-
-    html += '<svg class="arch-arrows" id="arch-arrows"></svg>';
-    html += '</div>';
-
-    $main.innerHTML = html;
-
-    var archMap = document.getElementById('arch-map');
-    var svgArrows = document.getElementById('arch-arrows');
-
-    var cards = archMap.querySelectorAll('.arch-card');
-    cards.forEach(function (card) {
-      var modId = card.dataset.module;
-
-      card.addEventListener('click', function (e) {
-        if (e.target.closest('.arch-file-item')) return;
-        archExpandedModules[modId] = !archExpandedModules[modId];
-        toggleCardExpand(card, modId, ad);
-      });
-
-      card.addEventListener('mouseenter', function () {
-        archHoveredModule = modId;
-        drawArrows(ad, archMap, svgArrows, modId);
-        cards.forEach(function (c) {
-          if (c.dataset.module !== modId) {
-            c.classList.add('arch-card-dimmed');
-          }
-        });
-        highlightConnectedCards(ad, modId, cards);
-      });
-
-      card.addEventListener('mouseleave', function () {
-        archHoveredModule = null;
-        clearArrows(svgArrows);
-        cards.forEach(function (c) {
-          c.classList.remove('arch-card-dimmed');
-          c.classList.remove('arch-card-connected');
-        });
-        drawIdleArrows(ad, archMap, svgArrows);
-      });
-    });
-
-    var fileItems = archMap.querySelectorAll('.arch-file-item');
-    fileItems.forEach(function (item) {
-      var fp = item.dataset.file;
-      item.addEventListener('click', function (e) {
-        e.stopPropagation();
-        selectFile(fp);
-        expandToFile(fp);
-      });
-      item.addEventListener('mouseenter', function (ev) {
-        showFileDependencyTooltip(ev, fp);
-      });
-      item.addEventListener('mousemove', moveTooltip);
-      item.addEventListener('mouseleave', hideTooltip);
-    });
-
-    // Layer collapse/expand
-    archMap.querySelectorAll('[data-layer-toggle]').forEach(function (header) {
-      header.addEventListener('click', function () {
-        var lk = header.dataset.layerToggle;
-        archCollapsedLayers[lk] = !archCollapsedLayers[lk];
-        var layer = header.closest('.arch-layer');
-        var cardsDiv = layer.querySelector('.arch-layer-cards');
-        var chevron = header.querySelector('.arch-layer-chevron');
-        if (archCollapsedLayers[lk]) {
-          layer.classList.add('arch-layer-collapsed');
-          cardsDiv.style.display = 'none';
-          chevron.textContent = '\u25B6';
-        } else {
-          layer.classList.remove('arch-layer-collapsed');
-          cardsDiv.style.display = '';
-          chevron.textContent = '\u25BC';
-        }
-        clearArrows(svgArrows);
-        if (!archCollapsedLayers[lk]) drawIdleArrows(ad, archMap, svgArrows);
-      });
-    });
-
-    // Search filter
-    var searchInput = document.getElementById('arch-search');
-    if (searchInput) {
-      searchInput.addEventListener('input', function () {
-        var q = searchInput.value.toLowerCase().trim();
-        cards.forEach(function (card) {
-          var modId = card.dataset.module;
-          if (!q || modId.toLowerCase().indexOf(q) !== -1) {
-            card.style.display = '';
-          } else {
-            card.style.display = 'none';
-          }
-        });
-      });
-    }
-
-    drawIdleArrows(ad, archMap, svgArrows);
-  }
-
-  function toggleCardExpand(card, modId, ad) {
-    var isExpanded = archExpandedModules[modId];
-    var existingFiles = card.querySelector('.arch-card-files');
-
-    if (!isExpanded) {
-      // collapse: remove file list
-      if (existingFiles) existingFiles.remove();
-      card.classList.remove('expanded');
-    } else {
-      // expand: add file list
-      card.classList.add('expanded');
-      var mod = ad.modules[modId];
-      if (!mod) return;
-
-      var filesDiv = document.createElement('div');
-      filesDiv.className = 'arch-card-files';
-
-      var sortedFiles = mod.files.slice().sort(function (a, b) {
-        var fa = fileMap[a], fb = fileMap[b];
-        var la = fa ? fa.lines : 0, lb = fb ? fb.lines : 0;
-        return lb - la;
-      });
-
-      sortedFiles.forEach(function (fp) {
-        var f = fileMap[fp];
-        var fname = fp.split('/').pop();
-        var lines = f ? f.lines : 0;
-        var fnCount = f ? f.functions.length : 0;
-        var cx = fileComplexity(f || {});
-        var fCxColor = cx < 10 ? '#3fb950' : cx < 20 ? '#d29922' : '#f85149';
-        var fSide = getFileSide(fp);
-        var item = document.createElement('div');
-        item.className = 'arch-file-item';
-        item.dataset.file = fp;
-        item.innerHTML = '<span class="arch-file-cx" style="background:' + fCxColor + '"></span>' +
-          '<span class="arch-file-name">' + escapeHtml(fname) + '</span>' +
-          '<span class="arch-file-side arch-side-badge-' + fSide + '">' + SIDE_CONFIG[fSide].label + '</span>' +
-          '<span class="arch-file-meta">' + lines + 'L / ' + fnCount + 'fn</span>';
-
-        item.addEventListener('click', function (e) {
-          e.stopPropagation();
-          selectFile(fp);
-          expandToFile(fp);
-        });
-
-        // hover: show dependency info
-        item.addEventListener('mouseenter', function (ev) {
-          showFileDependencyTooltip(ev, fp);
-        });
-        item.addEventListener('mousemove', moveTooltip);
-        item.addEventListener('mouseleave', hideTooltip);
-
-        filesDiv.appendChild(item);
-      });
-
-      card.appendChild(filesDiv);
-    }
-
-    // redraw arrows since card sizes changed
-    var archMap = document.getElementById('arch-map');
-    var svgArrows = document.getElementById('arch-arrows');
-    if (archMap && svgArrows) {
-      svgArrows.setAttribute('height', archMap.scrollHeight);
-      if (archHoveredModule) {
-        drawArrows(ad, archMap, svgArrows, archHoveredModule);
-      } else {
-        drawIdleArrows(ad, archMap, svgArrows);
-      }
-    }
-  }
-
-  function showFileDependencyTooltip(ev, filePath) {
-    var f = fileMap[filePath];
-    if (!f) return;
-
-    var usedBy = usedByMap[filePath] || [];
-    var imps = (f.imports || []).filter(function (i) { return !i.source.startsWith('$app') && !i.source.startsWith('$env'); });
-    var fns = f.functions || [];
-    var cx = fileComplexity(f);
-
-    var html = '<div style="max-width:320px">';
-    html += '<div style="font-weight:600;margin-bottom:6px;font-size:12px;color:var(--accent);word-break:break-all">' + escapeHtml(filePath) + '</div>';
-    html += '<div style="display:flex;gap:12px;margin-bottom:6px;font-size:11px;color:var(--text-secondary)">';
-    html += '<span>' + f.lines + ' lines</span>';
-    html += '<span>' + fns.length + ' fn</span>';
-    html += '<span>cx: ' + cx + '</span>';
-    html += '</div>';
-
-    if (imps.length > 0) {
-      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">IMPORTS (' + imps.length + ')</div>';
-      html += '<div style="max-height:150px;overflow-y:auto">';
-      imps.forEach(function (i) {
-        var name = i.source.split('/').pop();
-        html += '<div style="font-size:11px;color:var(--text-secondary);padding:1px 0">\u2190 ' + escapeHtml(name) + '</div>';
-      });
-      html += '</div>';
-    }
-
-    if (usedBy.length > 0) {
-      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">USED BY (' + usedBy.length + ')</div>';
-      html += '<div style="max-height:150px;overflow-y:auto">';
-      usedBy.forEach(function (p) {
-        var name = p.split('/').pop();
-        html += '<div style="font-size:11px;color:var(--accent-secondary);padding:1px 0">\u2192 ' + escapeHtml(name) + '</div>';
-      });
-      html += '</div>';
-    }
-
-    if (fns.length > 0) {
-      html += '<div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-weight:600">FUNCTIONS (' + fns.length + ')</div>';
-      html += '<div style="max-height:150px;overflow-y:auto">';
-      fns.forEach(function (fn) {
-        html += '<div style="font-size:11px;color:var(--text-secondary);padding:1px 0;font-family:var(--font-mono)">' + escapeHtml(fn.name) + '()</div>';
-      });
-      html += '</div>';
-    }
-
-    html += '</div>';
-    showTooltip(ev, html);
-  }
-
-  function highlightConnectedCards(ad, modId, cards) {
-    var connected = new Set();
-    ad.moduleEdges.forEach(function (e) {
-      if (e.source === modId) connected.add(e.target);
-      if (e.target === modId) connected.add(e.source);
-    });
-    cards.forEach(function (c) {
-      if (connected.has(c.dataset.module)) {
-        c.classList.remove('arch-card-dimmed');
-        c.classList.add('arch-card-connected');
-      }
-    });
-  }
-
-  function getCardCenter(card, container) {
-    var cr = card.getBoundingClientRect();
-    var mr = container.getBoundingClientRect();
-    return {
-      x: cr.left - mr.left + cr.width / 2 + container.scrollLeft,
-      y: cr.top - mr.top + cr.height / 2 + container.scrollTop
-    };
-  }
-
-  function getCardEdgePoint(card, container, targetX, targetY) {
-    var cr = card.getBoundingClientRect();
-    var mr = container.getBoundingClientRect();
-    var cx = cr.left - mr.left + cr.width / 2 + container.scrollLeft;
-    var cy = cr.top - mr.top + cr.height / 2 + container.scrollTop;
-    var hw = cr.width / 2;
-    var hh = cr.height / 2;
-    var dx = targetX - cx;
-    var dy = targetY - cy;
-    if (dx === 0 && dy === 0) return { x: cx, y: cy };
-    var absDx = Math.abs(dx);
-    var absDy = Math.abs(dy);
-    var scale;
-    if (absDx / hw > absDy / hh) {
-      scale = hw / absDx;
-    } else {
-      scale = hh / absDy;
-    }
-    return {
-      x: cx + dx * scale,
-      y: cy + dy * scale
-    };
-  }
-
-  function drawArrows(ad, container, svg, hoveredModId) {
-    clearArrows(svg);
-    var mapRect = container.getBoundingClientRect();
-    svg.setAttribute('width', container.scrollWidth);
-    svg.setAttribute('height', container.scrollHeight);
-
-    var cardElements = {};
-    container.querySelectorAll('.arch-card').forEach(function (c) {
-      cardElements[c.dataset.module] = c;
-    });
-
-    ad.moduleEdges.forEach(function (e) {
-      if (e.source !== hoveredModId && e.target !== hoveredModId) return;
-      var srcCard = cardElements[e.source];
-      var tgtCard = cardElements[e.target];
-      if (!srcCard || !tgtCard) return;
-
-      var srcCenter = getCardCenter(srcCard, container);
-      var tgtCenter = getCardCenter(tgtCard, container);
-      var srcPoint = getCardEdgePoint(srcCard, container, tgtCenter.x, tgtCenter.y);
-      var tgtPoint = getCardEdgePoint(tgtCard, container, srcCenter.x, srcCenter.y);
-
-      var isOutgoing = e.source === hoveredModId;
-      var color = isOutgoing ? archModuleColorMap[e.source] : 'rgba(139,148,158,0.6)';
-      var thickness = Math.max(1, Math.min(4, Math.ceil(e.weight / 10)));
-
-      var midX = (srcPoint.x + tgtPoint.x) / 2;
-      var midY = (srcPoint.y + tgtPoint.y) / 2;
-      var dy = tgtPoint.y - srcPoint.y;
-      var cpOffset = Math.min(Math.abs(dy) * 0.3, 60);
-      if (Math.abs(dy) < 20) cpOffset = 30;
-      var cpX = midX + (srcPoint.x < tgtPoint.x ? -cpOffset : cpOffset);
-
-      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      var d = 'M' + srcPoint.x + ',' + srcPoint.y +
-        ' Q' + cpX + ',' + midY + ' ' + tgtPoint.x + ',' + tgtPoint.y;
-      path.setAttribute('d', d);
-      path.setAttribute('stroke', color);
-      path.setAttribute('stroke-width', thickness);
-      path.setAttribute('fill', 'none');
-      path.setAttribute('opacity', '0.7');
-      path.setAttribute('stroke-linecap', 'round');
-      svg.appendChild(path);
-
-      var angle = Math.atan2(tgtPoint.y - midY, tgtPoint.x - cpX);
-      var arrowSize = 6 + thickness;
-      var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-      var ax = tgtPoint.x;
-      var ay = tgtPoint.y;
-      var p1x = ax - arrowSize * Math.cos(angle - 0.4);
-      var p1y = ay - arrowSize * Math.sin(angle - 0.4);
-      var p2x = ax - arrowSize * Math.cos(angle + 0.4);
-      var p2y = ay - arrowSize * Math.sin(angle + 0.4);
-      arrow.setAttribute('points', ax + ',' + ay + ' ' + p1x + ',' + p1y + ' ' + p2x + ',' + p2y);
-      arrow.setAttribute('fill', color);
-      arrow.setAttribute('opacity', '0.8');
-      svg.appendChild(arrow);
-
-      var weightLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      weightLabel.setAttribute('x', midX);
-      weightLabel.setAttribute('y', midY - 6);
-      weightLabel.setAttribute('text-anchor', 'middle');
-      weightLabel.setAttribute('fill', 'var(--text-muted)');
-      weightLabel.setAttribute('font-size', '10');
-      weightLabel.setAttribute('font-family', 'var(--font-mono)');
-      weightLabel.textContent = e.weight;
-      svg.appendChild(weightLabel);
-    });
-  }
-
-  function drawIdleArrows(ad, container, svg) {
-    clearArrows(svg);
-    var mapRect = container.getBoundingClientRect();
-    svg.setAttribute('width', container.scrollWidth);
-    svg.setAttribute('height', container.scrollHeight);
-
-    var cardElements = {};
-    container.querySelectorAll('.arch-card').forEach(function (c) {
-      cardElements[c.dataset.module] = c;
-    });
-
-    var sorted = ad.moduleEdges.slice().sort(function (a, b) { return b.weight - a.weight; });
-    var topEdges = sorted.slice(0, 10);
-
-    topEdges.forEach(function (e) {
-      var srcCard = cardElements[e.source];
-      var tgtCard = cardElements[e.target];
-      if (!srcCard || !tgtCard) return;
-
-      var srcCenter = getCardCenter(srcCard, container);
-      var tgtCenter = getCardCenter(tgtCard, container);
-      var srcPoint = getCardEdgePoint(srcCard, container, tgtCenter.x, tgtCenter.y);
-      var tgtPoint = getCardEdgePoint(tgtCard, container, srcCenter.x, srcCenter.y);
-
-      var midX = (srcPoint.x + tgtPoint.x) / 2;
-      var midY = (srcPoint.y + tgtPoint.y) / 2;
-      var dy = tgtPoint.y - srcPoint.y;
-      var cpOffset = Math.min(Math.abs(dy) * 0.3, 60);
-      if (Math.abs(dy) < 20) cpOffset = 30;
-      var cpX = midX + (srcPoint.x < tgtPoint.x ? -cpOffset : cpOffset);
-
-      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      var d = 'M' + srcPoint.x + ',' + srcPoint.y +
-        ' Q' + cpX + ',' + midY + ' ' + tgtPoint.x + ',' + tgtPoint.y;
-      path.setAttribute('d', d);
-      path.setAttribute('stroke', 'var(--border)');
-      path.setAttribute('stroke-width', '1');
-      path.setAttribute('fill', 'none');
-      path.setAttribute('opacity', '0.3');
-      path.setAttribute('stroke-dasharray', '6,4');
-      path.setAttribute('stroke-linecap', 'round');
-      svg.appendChild(path);
-    });
-  }
-
-  function clearArrows(svg) {
-    while (svg.firstChild) {
-      svg.removeChild(svg.firstChild);
-    }
-  }
-
-  function highlightGraphNode(filePath) {
-    var archMap = document.getElementById('arch-map');
-    if (!archMap) return;
-    archMap.querySelectorAll('.arch-file-item').forEach(function (item) {
-      item.classList.toggle('arch-file-active', item.dataset.file === filePath);
-    });
-    if (filePath) {
-      var modId = getModuleId(filePath);
-      if (!archExpandedModules[modId]) {
-        archExpandedModules[modId] = true;
-        renderGraphLevel();
-      }
-    }
-  }
-
-  function clearGraphHighlight() {
-    var archMap = document.getElementById('arch-map');
-    if (!archMap) return;
-    archMap.querySelectorAll('.arch-file-item.arch-file-active').forEach(function (item) {
-      item.classList.remove('arch-file-active');
-    });
-  }
 
   function showTooltip(event, content) {
     $tooltip.innerHTML = content;
@@ -1340,14 +708,18 @@
       var dirPath = pathPrefix ? pathPrefix + '/' + dirName : dirName;
       var child = node.children[dirName];
       var isExpanded = state.expandedDirs.has(dirPath);
-      var count = countFiles(child);
+      var ds = countDirStats(child);
       var pl = depth * 20 + 12;
 
       html += '<div class="tree-item directory" style="padding-left:' + pl + 'px" data-tree-dir="' + escapeHtml(dirPath) + '">' +
         '<span class="tree-chevron ' + (isExpanded ? 'open' : '') + '">\u25B6</span>' +
         '<span class="tree-icon dir">\uD83D\uDCC1</span>' +
         '<span class="tree-label">' + escapeHtml(dirName) + '</span>' +
-        '<span class="tree-badge">' + count + '</span></div>';
+        '<span class="tree-metrics">' +
+          '<span class="tree-metric tm-fns" title="Functions">' + ds.fns + ' fn</span>' +
+          '<span class="tree-metric tm-lines" title="Lines">' + ds.lines + '</span>' +
+        '</span>' +
+        '<span class="tree-badge">' + ds.files + '</span></div>';
 
       if (isExpanded) {
         html += renderTreeViewNode(child, depth + 1, dirPath);
@@ -1360,17 +732,239 @@
       var iconInfo = extIcons[ext] || { icon: '\u2022', cls: '' };
       var cx = fileComplexity(f);
       var cxColor = cx < 10 ? '#3fb950' : cx < 25 ? '#d29922' : '#f85149';
+      var cxWidth = Math.min(cx, 60);
+      var fnCount = f.functions ? f.functions.length : 0;
+      var coupling = usedByMap[f.path] ? usedByMap[f.path].length : 0;
       var pl = depth * 20 + 12;
 
       html += '<div class="tree-item" style="padding-left:' + pl + 'px" data-tree-file="' + escapeHtml(f.path) + '">' +
         '<span class="tree-indent"></span>' +
         '<span class="tree-icon ' + iconInfo.cls + '">' + iconInfo.icon + '</span>' +
         '<span class="tree-label">' + escapeHtml(fileName) + '</span>' +
-        '<span style="width:6px;height:6px;border-radius:50%;background:' + cxColor + ';display:inline-block;margin-left:auto;margin-right:8px;flex-shrink:0"></span>' +
+        '<span class="tree-metrics">' +
+          (fnCount > 0 ? '<span class="tree-metric tm-fns" title="' + fnCount + ' functions">' + fnCount + ' fn</span>' : '') +
+          (coupling > 0 ? '<span class="tree-metric tm-coupling" title="Imported by ' + coupling + ' files">' + coupling + '\u2191</span>' : '') +
+        '</span>' +
+        '<span class="tree-cx-bar" title="Complexity: ' + cx + '">' +
+          '<span class="tree-cx-fill" style="width:' + cxWidth + '%;background:' + cxColor + '"></span>' +
+        '</span>' +
         '<span class="tree-badge">' + f.lines + ' lines</span></div>';
     });
 
     return html;
+  }
+
+  // Squarified treemap layout
+  function squarify(items, x, y, w, h) {
+    if (items.length === 0) return [];
+    var rects = [];
+    var total = 0;
+    items.forEach(function (it) { total += it.value; });
+    if (total === 0) return [];
+
+    var remaining = items.slice();
+    var cx = x, cy = y, cw = w, ch = h;
+
+    while (remaining.length > 0) {
+      var isWide = cw >= ch;
+      var side = isWide ? ch : cw;
+      var row = [];
+      var rowSum = 0;
+      var worst = Infinity;
+
+      for (var i = 0; i < remaining.length; i++) {
+        var testRow = row.concat([remaining[i]]);
+        var testSum = rowSum + remaining[i].value;
+        var testWorst = worstRatio(testRow, testSum, side, total, cw * ch);
+        if (testWorst <= worst || row.length === 0) {
+          row = testRow;
+          rowSum = testSum;
+          worst = testWorst;
+        } else {
+          break;
+        }
+      }
+
+      remaining = remaining.slice(row.length);
+      var rowFrac = rowSum / total;
+      var rowSize = isWide ? cw * rowFrac : ch * rowFrac;
+
+      var offset = 0;
+      row.forEach(function (it) {
+        var frac = rowSum > 0 ? it.value / rowSum : 0;
+        var itemSize = (isWide ? ch : cw) * frac;
+        if (isWide) {
+          rects.push({ item: it, x: cx, y: cy + offset, w: rowSize, h: itemSize });
+        } else {
+          rects.push({ item: it, x: cx + offset, y: cy, w: itemSize, h: rowSize });
+        }
+        offset += itemSize;
+      });
+
+      if (isWide) {
+        cx += rowSize;
+        cw -= rowSize;
+      } else {
+        cy += rowSize;
+        ch -= rowSize;
+      }
+      total -= rowSum;
+    }
+    return rects;
+  }
+
+  function worstRatio(row, rowSum, side, totalVal, area) {
+    var worst = 0;
+    var rowArea = (rowSum / totalVal) * area;
+    var rowSide = rowArea / side;
+    row.forEach(function (it) {
+      var itemArea = (it.value / totalVal) * area;
+      var itemSide = itemArea / rowSide;
+      var ratio = Math.max(itemSide / rowSide, rowSide / itemSide);
+      if (ratio > worst) worst = ratio;
+    });
+    return worst;
+  }
+
+  var treemapDrillPath = '';
+
+  function renderTreemapView() {
+    var tree = buildFileTree();
+
+    // Navigate to drill target
+    var target = tree;
+    if (treemapDrillPath) {
+      var parts = treemapDrillPath.split('/');
+      for (var i = 0; i < parts.length; i++) {
+        if (target.children[parts[i]]) {
+          target = target.children[parts[i]];
+        } else {
+          treemapDrillPath = '';
+          target = tree;
+          break;
+        }
+      }
+    }
+
+    // Build treemap items from directories and files
+    var items = [];
+    Object.keys(target.children).sort().forEach(function (dirName) {
+      var child = target.children[dirName];
+      var ds = countDirStats(child);
+      if (ds.lines > 0) {
+        var dirPath = treemapDrillPath ? treemapDrillPath + '/' + dirName : dirName;
+        var dirColorKey = dirPath.split('/').slice(0, 2).join('/');
+        items.push({ type: 'dir', name: dirName, path: dirPath, value: ds.lines, stats: ds, color: getDirColor(dirColorKey) });
+      }
+    });
+    target.files.forEach(function (f) {
+      var cx = fileComplexity(f);
+      var cxColor = cx < 10 ? '#3fb950' : cx < 25 ? '#d29922' : '#f85149';
+      var dirKey = f.path.split('/').slice(0, 2).join('/');
+      items.push({ type: 'file', name: f.path.split('/').pop(), path: f.path, value: f.lines || 1, color: getDirColor(dirKey), cxColor: cxColor, cx: cx, file: f });
+    });
+
+    items.sort(function (a, b) { return b.value - a.value; });
+
+    // Breadcrumb
+    var html = '<div class="treemap-container">';
+    html += '<div class="treemap-breadcrumb">';
+    html += '<span class="treemap-crumb" data-treemap-drill="">\u25C0 All</span>';
+    if (treemapDrillPath) {
+      var crumbParts = treemapDrillPath.split('/');
+      var crumbPath = '';
+      crumbParts.forEach(function (p, idx) {
+        crumbPath += (idx > 0 ? '/' : '') + p;
+        html += ' <span class="treemap-crumb-sep">/</span> ';
+        html += '<span class="treemap-crumb" data-treemap-drill="' + escapeHtml(crumbPath) + '">' + escapeHtml(p) + '</span>';
+      });
+    }
+    html += '</div>';
+
+    html += '<div class="treemap-area" id="treemap-area"></div>';
+    html += '</div>';
+
+    $main.innerHTML = html;
+
+    // Layout after DOM insertion so we can measure the area
+    var area = document.getElementById('treemap-area');
+    var W = area.clientWidth;
+    var H = area.clientHeight;
+
+    if (items.length === 0 || W === 0 || H === 0) {
+      area.innerHTML = '<div class="empty-state"><div class="empty-state-title">No files</div></div>';
+      return;
+    }
+
+    var rects = squarify(items, 0, 0, W, H);
+    var PAD = 2;
+
+    var rectsHtml = '';
+    rects.forEach(function (r, idx) {
+      var it = r.item;
+      var rx = r.x + PAD;
+      var ry = r.y + PAD;
+      var rw = Math.max(r.w - PAD * 2, 0);
+      var rh = Math.max(r.h - PAD * 2, 0);
+      if (rw < 1 || rh < 1) return;
+
+      var isDir = it.type === 'dir';
+      var bgColor = isDir ? it.color + '22' : it.color + '44';
+      var borderColor = isDir ? it.color + '66' : it.color + '88';
+      var showLabel = rw > 30 && rh > 16;
+      var showValue = rw > 50 && rh > 30;
+
+      rectsHtml += '<div class="treemap-rect' + (isDir ? ' treemap-dir' : ' treemap-file') + '" ' +
+        'data-treemap-idx="' + idx + '" ' +
+        (isDir ? 'data-treemap-drill="' + escapeHtml(it.path) + '"' : 'data-treemap-file="' + escapeHtml(it.path) + '"') +
+        ' style="left:' + rx + 'px;top:' + ry + 'px;width:' + rw + 'px;height:' + rh + 'px;' +
+        'background:' + bgColor + ';border-color:' + borderColor + '"' +
+        ' title="' + escapeHtml(it.name) + ' — ' + it.value + ' lines' + (it.cx ? ' (cx:' + it.cx + ')' : '') + '">';
+
+      if (isDir && showLabel) {
+        rectsHtml += '<span class="treemap-label treemap-dir-label" style="color:' + it.color + '">\uD83D\uDCC1 ' + escapeHtml(it.name) + '</span>';
+        if (showValue) rectsHtml += '<span class="treemap-value">' + it.stats.files + ' files \u00B7 ' + it.value + ' lines</span>';
+      } else if (!isDir && showLabel) {
+        rectsHtml += '<span class="treemap-label">' + escapeHtml(it.name) + '</span>';
+        if (showValue) rectsHtml += '<span class="treemap-value">' + it.value + ' lines</span>';
+        if (it.cx > 0 && rw > 40 && rh > 40) {
+          rectsHtml += '<span class="treemap-cx" style="background:' + it.cxColor + '"></span>';
+        }
+      }
+
+      rectsHtml += '</div>';
+    });
+
+    area.innerHTML = rectsHtml;
+
+    // Event: drill into directories
+    area.querySelectorAll('[data-treemap-drill]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        treemapDrillPath = el.dataset.treemapDrill;
+        renderTreemapView();
+      });
+    });
+
+    // Event: click file → detail panel
+    area.querySelectorAll('[data-treemap-file]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var fp = el.dataset.treemapFile;
+        if (fileMap[fp]) {
+          expandToFile(fp);
+          selectFile(fp);
+        }
+      });
+    });
+
+    // Breadcrumb navigation
+    $main.querySelectorAll('[data-treemap-drill]').forEach(function (el) {
+      if (el.classList.contains('treemap-crumb')) {
+        el.addEventListener('click', function () {
+          treemapDrillPath = el.dataset.treemapDrill;
+          renderTreemapView();
+        });
+      }
+    });
   }
 
   function renderRoutesView() {
@@ -1412,13 +1006,13 @@
     var methodOrder = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
     methodOrder.forEach(function (m) {
       if (methodCounts[m]) {
-        html += '<span class="routes-method-count badge-' + m.toLowerCase() + '">' + m + ' <strong>' + methodCounts[m] + '</strong></span>';
+        html += '<span class="routes-method-count badge-' + m.toLowerCase() + '" data-method="' + m + '" style="cursor:pointer" title="Click to filter">' + m + ' <strong>' + methodCounts[m] + '</strong></span>';
       }
     });
     // any other methods
     Object.keys(methodCounts).forEach(function (m) {
       if (methodOrder.indexOf(m) === -1) {
-        html += '<span class="routes-method-count">' + m + ' <strong>' + methodCounts[m] + '</strong></span>';
+        html += '<span class="routes-method-count" data-method="' + m + '" style="cursor:pointer" title="Click to filter">' + m + ' <strong>' + methodCounts[m] + '</strong></span>';
       }
     });
     html += '</div>';
@@ -1437,17 +1031,14 @@
 
       groups[prefix].forEach(function (r) {
         var methods = (r.methods || []);
+        if (methods.length === 0 && r.type === 'page') methods = ['GET'];
         var methodBadges = methods.map(function (m) {
           return '<span class="badge badge-' + m.toLowerCase() + '">' + m + '</span>';
         }).join(' ');
 
-        if (methods.length === 0 && r.type === 'page') {
-          methodBadges = '<span class="badge badge-get">GET</span>';
-        }
-
         var typeBadge = '<span class="badge badge-' + r.type + '">' + r.type + '</span>';
 
-        html += '<div class="route-row" data-route-file="' + escapeHtml(r.file) + '">' +
+        html += '<div class="route-row" data-route-file="' + escapeHtml(r.file) + '" data-methods="' + methods.join(',') + '">' +
           '<div class="route-methods">' + methodBadges + '</div>' +
           '<div class="route-path">' + escapeHtml(r.path) + '</div>' +
           '<div class="route-file">' + escapeHtml(r.file.split('/').pop()) + '</div>' +
@@ -1467,6 +1058,38 @@
           expandToFile(fp);
           selectFile(fp);
         }
+      });
+    });
+
+    // Method filter toggle
+    var activeFilters = {};
+    $main.querySelectorAll('.routes-method-count[data-method]').forEach(function (badge) {
+      badge.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var method = badge.dataset.method;
+        if (activeFilters[method]) {
+          delete activeFilters[method];
+          badge.classList.remove('method-filter-active');
+        } else {
+          activeFilters[method] = true;
+          badge.classList.add('method-filter-active');
+        }
+        var hasActiveFilter = Object.keys(activeFilters).length > 0;
+        $main.querySelectorAll('.route-row').forEach(function (row) {
+          if (!hasActiveFilter) {
+            row.style.display = '';
+            return;
+          }
+          var rowMethods = (row.dataset.methods || '').split(',');
+          var match = false;
+          rowMethods.forEach(function (rm) { if (activeFilters[rm]) match = true; });
+          row.style.display = match ? '' : 'none';
+        });
+        // Show/hide empty groups
+        $main.querySelectorAll('.routes-group').forEach(function (grp) {
+          var visible = grp.querySelectorAll('.route-row:not([style*="display: none"])');
+          grp.style.display = visible.length > 0 ? '' : 'none';
+        });
       });
     });
   }
@@ -1500,9 +1123,58 @@
     var topCoupling = couplingData.slice(0, 15);
     var maxCoupling = topCoupling.length > 0 ? topCoupling[0].count : 1;
 
+    // Risk Hotspots: files that are BOTH complex AND highly imported
+    var riskData = [];
+    data.files.forEach(function (f) {
+      var cx = fileComplexity(f);
+      var coupling = usedByMap[f.path] ? usedByMap[f.path].length : 0;
+      if (cx > 5 && coupling > 2) {
+        riskData.push({ path: f.path, complexity: cx, coupling: coupling, risk: cx * coupling, lines: f.lines });
+      }
+    });
+    riskData.sort(function (a, b) { return b.risk - a.risk; });
+    var topRisk = riskData.slice(0, 20);
+    var maxRisk = topRisk.length > 0 ? topRisk[0].risk : 1;
+
+    // Project Health Score (0-100)
+    var totalFiles = data.files.length || 1;
+    var avgCx = 0;
+    if (complexityData.length > 0) {
+      var cxSum = 0;
+      complexityData.forEach(function (c) { cxSum += c.complexity; });
+      avgCx = cxSum / complexityData.length;
+    }
+    var circularPenalty = Math.min(circular.length * 8, 30);
+    var deadPenalty = Math.min(Math.round((deadExports.length / totalFiles) * 40), 20);
+    var orphanPenalty = Math.min(Math.round((orphans.length / totalFiles) * 30), 15);
+    var cxPenalty = Math.min(Math.round(avgCx * 0.8), 25);
+    var riskPenalty = Math.min(topRisk.length * 2, 10);
+    var healthScore = Math.max(0, 100 - circularPenalty - deadPenalty - orphanPenalty - cxPenalty - riskPenalty);
+    var scoreColor = healthScore >= 80 ? '#3fb950' : healthScore >= 60 ? '#d29922' : '#f85149';
+    var scoreLabel = healthScore >= 80 ? 'Healthy' : healthScore >= 60 ? 'Fair' : 'Needs Work';
+    var scoreRadius = 54;
+    var scoreCircum = 2 * Math.PI * scoreRadius;
+    var scoreDash = Math.round((healthScore / 100) * scoreCircum);
+
     var html = '<div class="insights-view">';
 
-    // Summary bar
+    // Health Score + Summary
+    html += '<div class="health-row">';
+
+    // Score circle
+    html += '<div class="health-score">';
+    html += '<svg width="128" height="128" viewBox="0 0 128 128">';
+    html += '<circle cx="64" cy="64" r="' + scoreRadius + '" fill="none" stroke="var(--bg-tertiary)" stroke-width="7"/>';
+    html += '<circle cx="64" cy="64" r="' + scoreRadius + '" fill="none" stroke="' + scoreColor + '" stroke-width="7" ' +
+      'stroke-dasharray="' + scoreDash + ' ' + scoreCircum + '" stroke-linecap="round" ' +
+      'transform="rotate(-90 64 64)" style="transition:stroke-dasharray 0.6s"/>';
+    html += '<text x="64" y="58" text-anchor="middle" fill="' + scoreColor + '" font-size="32" font-weight="700" font-family="var(--font-mono)">' + healthScore + '</text>';
+    html += '<text x="64" y="78" text-anchor="middle" fill="var(--text-muted)" font-size="11">' + scoreLabel + '</text>';
+    html += '</svg>';
+    html += '</div>';
+
+    // Summary items
+    html += '<div class="health-details">';
     html += '<div class="insight-summary">';
     html += '<div class="insight-summary-item' + (circular.length > 0 ? ' has-issues' : '') + '">' +
       '<span class="insight-summary-val">' + circular.length + '</span>' +
@@ -1513,10 +1185,45 @@
     html += '<div class="insight-summary-item' + (orphans.length > 0 ? ' has-issues' : '') + '">' +
       '<span class="insight-summary-val">' + orphans.length + '</span>' +
       '<span class="insight-summary-lbl">Orphans</span></div>';
-    html += '<div class="insight-summary-item">' +
-      '<span class="insight-summary-val">' + topComplex.length + '</span>' +
-      '<span class="insight-summary-lbl">Hotspots</span></div>';
+    html += '<div class="insight-summary-item' + (topRisk.length > 0 ? ' has-issues' : '') + '">' +
+      '<span class="insight-summary-val">' + topRisk.length + '</span>' +
+      '<span class="insight-summary-lbl">Risk Hotspots</span></div>';
     html += '</div>';
+
+    // Score breakdown
+    html += '<div class="health-breakdown">';
+    if (circularPenalty > 0) html += '<span class="health-bp">-' + circularPenalty + ' circular</span>';
+    if (deadPenalty > 0) html += '<span class="health-bp">-' + deadPenalty + ' dead exports</span>';
+    if (orphanPenalty > 0) html += '<span class="health-bp">-' + orphanPenalty + ' orphans</span>';
+    if (cxPenalty > 0) html += '<span class="health-bp">-' + cxPenalty + ' complexity</span>';
+    if (riskPenalty > 0) html += '<span class="health-bp">-' + riskPenalty + ' risk hotspots</span>';
+    if (healthScore === 100) html += '<span class="health-bp" style="color:#3fb950">Perfect</span>';
+    html += '</div>';
+
+    html += '</div>'; // health-details
+    html += '</div>'; // health-row
+
+    // Risk Hotspots — full width, above the grid
+    html += insightSection('risk', 'Risk Hotspots', topRisk.length, 'error',
+      topRisk.length === 0 ? '<div class="insight-empty">No files with both high complexity and high coupling.</div>' :
+        '<div class="insight-risk-desc">Files that are complex <em>and</em> heavily imported — riskiest to change.</div>' +
+        topRisk.map(function (item) {
+          var pct = Math.round((item.risk / maxRisk) * 100);
+          var cxPct = Math.round(Math.min(item.complexity / 60, 1) * 100);
+          var cpPct = Math.round(Math.min(item.coupling / maxCoupling, 1) * 100);
+          var color = item.risk > maxRisk * 0.6 ? '#f85149' : item.risk > maxRisk * 0.3 ? '#d29922' : '#58a6ff';
+          return '<div class="hotspot-bar risk-bar" data-insight-file="' + escapeHtml(item.path) + '">' +
+            '<span class="hotspot-label" title="' + escapeHtml(item.path) + '">' + escapeHtml(shortPath(item.path)) + '</span>' +
+            '<div class="risk-tracks">' +
+              '<div class="risk-track"><div class="hotspot-fill" style="width:' + cxPct + '%;background:#d29922" title="Complexity: ' + item.complexity + '"></div></div>' +
+              '<div class="risk-track"><div class="hotspot-fill" style="width:' + cpPct + '%;background:#58a6ff" title="Coupling: ' + item.coupling + '"></div></div>' +
+            '</div>' +
+            '<span class="hotspot-value risk-value" style="color:' + color + '">' + item.risk + '</span></div>';
+        }).join('') +
+        '<div class="risk-legend"><span class="risk-legend-item"><span class="risk-legend-dot" style="background:#d29922"></span>complexity</span>' +
+        '<span class="risk-legend-item"><span class="risk-legend-dot" style="background:#58a6ff"></span>coupling</span>' +
+        '<span class="risk-legend-item" style="color:var(--text-muted)">score = complexity \u00D7 coupling</span></div>'
+    );
 
     // Two-column grid for charts
     html += '<div class="insight-grid">';
@@ -1579,6 +1286,163 @@
           return '<div class="insight-table-row" data-insight-file="' + escapeHtml(filePath) + '">' +
             '<span class="insight-col-export">' + escapeHtml(exportName) + '</span>' +
             '<span class="insight-col-file" title="' + escapeHtml(filePath) + '">' + escapeHtml(shortPath(filePath)) + (line ? ':' + line : '') + '</span></div>';
+        }).join('') + '</div>'
+    );
+
+    // Duplicate Import Paths
+    // Detect $lib prefix for alias resolution
+    var libPrefix = 'src/lib';
+    data.files.forEach(function (f) {
+      if (f.path.startsWith('src/lib/')) libPrefix = 'src/lib';
+      else if (f.path.startsWith('lib/')) libPrefix = 'lib';
+    });
+
+    function resolveImportFull(fromFile, importSource) {
+      // Handle $lib alias
+      if (importSource.startsWith('$lib/')) {
+        var aliased = libPrefix + importSource.substring(4);
+        if (fileMap[aliased]) return aliased;
+        var aliasExts = ['.js', '.ts', '.svelte', '.jsx', '.tsx', '/index.js', '/index.ts'];
+        for (var ae = 0; ae < aliasExts.length; ae++) {
+          if (fileMap[aliased + aliasExts[ae]]) return aliased + aliasExts[ae];
+        }
+        return aliased;
+      }
+      return resolveImportPath(fromFile, importSource);
+    }
+
+    var dupImports = [];
+    var targetPathMap = {}; // resolved target -> { rawSource -> [fromFiles] }
+    if (data.graph && data.graph.edges) {
+      // Build edge map: source file -> [target paths]
+      var edgeTargetsBySource = {};
+      data.graph.edges.forEach(function (e) {
+        if (e.external) return;
+        if (!edgeTargetsBySource[e.source]) edgeTargetsBySource[e.source] = [];
+        edgeTargetsBySource[e.source].push(e.target);
+      });
+
+      // For each file, match its imports to edge targets
+      data.files.forEach(function (f) {
+        if (!f.imports) return;
+        var edgeTargets = (edgeTargetsBySource[f.path] || []).slice();
+        f.imports.forEach(function (imp) {
+          // Try full resolve (handles relative + $lib)
+          var resolved = resolveImportFull(f.path, imp.source);
+          var matchedTarget = null;
+          var idx = edgeTargets.indexOf(resolved);
+          if (idx !== -1) {
+            matchedTarget = resolved;
+            edgeTargets.splice(idx, 1);
+          } else {
+            // Fallback: match by filename against remaining edges
+            var rawFile = imp.source.split('/').pop().replace(/\.(js|ts|svelte|jsx|tsx|mjs)$/, '');
+            for (var j = 0; j < edgeTargets.length; j++) {
+              var edgeFile = edgeTargets[j].split('/').pop().replace(/\.(js|ts|svelte|jsx|tsx|mjs)$/, '');
+              if (rawFile === edgeFile) {
+                matchedTarget = edgeTargets[j];
+                edgeTargets.splice(j, 1);
+                break;
+              }
+            }
+          }
+          if (matchedTarget) {
+            if (!targetPathMap[matchedTarget]) targetPathMap[matchedTarget] = {};
+            if (!targetPathMap[matchedTarget][imp.source]) targetPathMap[matchedTarget][imp.source] = [];
+            targetPathMap[matchedTarget][imp.source].push(f.path);
+          }
+        });
+      });
+    }
+    Object.keys(targetPathMap).forEach(function (target) {
+      var paths = Object.keys(targetPathMap[target]);
+      if (paths.length > 1) {
+        dupImports.push({ target: target, paths: paths.map(function (p) { return { raw: p, files: targetPathMap[target][p] }; }) });
+      }
+    });
+    dupImports.sort(function (a, b) { return b.paths.length - a.paths.length; });
+
+    html += insightSection('dupImports', 'Duplicate Import Paths', dupImports.length, 'warning',
+      dupImports.length === 0 ? '<div class="insight-empty">No inconsistent import paths found.</div>' :
+        '<div class="insight-risk-desc">Same module imported via different paths — pick one and be consistent.</div>' +
+        dupImports.slice(0, 20).map(function (dup) {
+          var inner = '<div class="dup-target" data-insight-file="' + escapeHtml(dup.target) + '">' + escapeHtml(shortPath(dup.target)) + '</div>';
+          inner += '<div class="dup-paths">';
+          dup.paths.forEach(function (p) {
+            inner += '<div class="dup-path-row">' +
+              '<code class="dup-raw">' + escapeHtml(p.raw) + '</code>' +
+              '<span class="dup-count">' + p.files.length + ' file' + (p.files.length > 1 ? 's' : '') + '</span>' +
+              '</div>';
+          });
+          inner += '</div>';
+          return '<div class="insight-card">' + inner + '</div>';
+        }).join('')
+    );
+
+    // Import/Export Mismatch
+    var mismatches = [];
+    if (data.graph && data.graph.edges) {
+      // Pre-compute which files have wildcard re-exports (export * from ...)
+      var hasWildcardReexport = {};
+      data.files.forEach(function (f) {
+        if (f.exports) {
+          f.exports.forEach(function (exp) {
+            if (exp.type === 'reexport-all' || exp.name === '*') hasWildcardReexport[f.path] = true;
+          });
+        }
+      });
+
+      data.graph.edges.forEach(function (e) {
+        if (e.external) return;
+        var targetFile = fileMap[e.target];
+        if (!targetFile) return;
+        var specs = e.specifiers || [];
+        if (specs.length === 0) return;
+
+        // Skip files with export * — can't know their full export surface
+        if (hasWildcardReexport[e.target]) return;
+
+        var exportNames = {};
+        if (targetFile.exports) {
+          targetFile.exports.forEach(function (exp) { exportNames[exp.name] = true; });
+        }
+
+        // Svelte files always have an implicit default export (the component itself)
+        if (e.target.endsWith('.svelte')) {
+          exportNames['default'] = true;
+        }
+
+        specs.forEach(function (sp) {
+          if (sp.type === 'namespace') return; // import * is always valid
+          var lookFor = sp.imported || sp.local;
+          if (!lookFor || lookFor === '*') return;
+          if (!exportNames[lookFor]) {
+            mismatches.push({ from: e.source, to: e.target, name: lookFor, line: 0 });
+          }
+        });
+      });
+    }
+    // Deduplicate
+    var mismatchMap = {};
+    mismatches.forEach(function (m) {
+      var key = m.from + ':' + m.to + ':' + m.name;
+      if (!mismatchMap[key]) mismatchMap[key] = m;
+    });
+    var uniqueMismatches = Object.keys(mismatchMap).map(function (k) { return mismatchMap[k]; });
+    uniqueMismatches.sort(function (a, b) { return a.to.localeCompare(b.to) || a.name.localeCompare(b.name); });
+
+    html += insightSection('mismatches', 'Import/Export Mismatches', uniqueMismatches.length, 'error',
+      uniqueMismatches.length === 0 ? '<div class="insight-empty">All imports match their target exports.</div>' :
+        '<div class="insight-risk-desc">Imported names not found in the target file\'s exports — possible broken references.</div>' +
+        '<div class="insight-table"><div class="insight-table-head">' +
+          '<span class="insight-col-export">Import</span>' +
+          '<span class="insight-col-file">From \u2192 Target</span></div>' +
+        uniqueMismatches.slice(0, 50).map(function (m) {
+          return '<div class="insight-table-row" data-insight-file="' + escapeHtml(m.from) + '">' +
+            '<span class="insight-col-export" style="color:var(--error)">' + escapeHtml(m.name) + '</span>' +
+            '<span class="insight-col-file" title="' + escapeHtml(m.from) + ' \u2192 ' + escapeHtml(m.to) + '">' +
+              escapeHtml(shortPath(m.from)) + ' <span style="color:var(--text-muted)">\u2192</span> ' + escapeHtml(shortPath(m.to)) +
+            '</span></div>';
         }).join('') + '</div>'
     );
 
@@ -1648,7 +1512,7 @@
       var kv = part.split('=');
       if (kv.length === 2) params[kv[0]] = decodeURIComponent(kv[1]);
     });
-    if (params.view && ['graph', 'tree', 'routes', 'insights'].indexOf(params.view) !== -1) {
+    if (params.view && ['tree', 'treemap', 'routes', 'insights'].indexOf(params.view) !== -1) {
       state.view = params.view;
     }
     if (params.file && fileMap[params.file]) {
@@ -1680,25 +1544,19 @@
 
     // 1-4 for view tabs
     if (document.activeElement === $searchInput) return;
-    var views = ['graph', 'tree', 'routes', 'insights'];
+    var views = ['tree', 'treemap', 'routes', 'insights'];
     var num = parseInt(e.key, 10);
     if (num >= 1 && num <= 4) {
       switchView(views[num - 1]);
     }
   });
 
-  window.addEventListener('resize', debounce(function () {
-    if (state.view === 'graph') renderGraphLevel();
-  }, 300));
-
   readHash();
 
-  // Set active tab
   tabButtons.forEach(function (b) {
     b.classList.toggle('active', b.dataset.view === state.view);
   });
 
-  // Expand top-level directories by default
   data.files.forEach(function (f) {
     var top = f.path.split('/')[0];
     if (top && top !== f.path) {
@@ -1706,10 +1564,17 @@
     }
   });
 
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      if (state.view === 'treemap') renderTreemapView();
+    }, 150);
+  });
+
   renderFileTree();
   renderMain();
 
-  // If a file was selected from hash, show detail
   if (state.selectedNode && fileMap[state.selectedNode]) {
     $detailPanel.classList.add('open');
     renderDetailPanel(state.selectedNode);

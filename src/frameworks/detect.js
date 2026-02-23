@@ -43,7 +43,6 @@ async function checkParentDirs(rootDir) {
 export async function detectFramework(rootDir, files) {
   const pkg = await readPackageJson(rootDir);
 
-  // Check for svelte.config.js in scanned files or parent directories
   const isSvelteKit = hasSvelteKitConfig(files) || await checkParentDirs(rootDir);
 
   if (isSvelteKit) {
@@ -52,7 +51,6 @@ export async function detectFramework(rootDir, files) {
     return { name: 'sveltekit', version: version || undefined, config: pkg };
   }
 
-  // Check package.json for svelte (without kit)
   const allDeps = { ...pkg?.dependencies, ...pkg?.devDependencies };
   if (allDeps?.['svelte']) {
     return { name: 'svelte', version: allDeps['svelte'], config: pkg };

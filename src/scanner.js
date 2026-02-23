@@ -17,14 +17,12 @@ function parseGitignore(content) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
 
-    // negation patterns (e.g., !.env.example)
     if (line.startsWith('!')) {
       negations.add(line.slice(1).replace(/\/+$/, '').replace(/^\/+/, ''));
       continue;
     }
 
     let p = line.replace(/\/+$/, '');
-    // leading / means root-relative only — store as-is with a flag
     const rootOnly = p.startsWith('/');
     if (rootOnly) p = p.slice(1);
 
@@ -35,10 +33,8 @@ function parseGitignore(content) {
 }
 
 function matchSegment(relativePath, name, pattern, rootOnly) {
-  // exact name match (skip if rootOnly — leading '/' patterns only match at project root)
   if (pattern === name && !rootOnly) return true;
 
-  // handle wildcards
   if (pattern.includes('*')) {
     const regex = new RegExp(
       '^' + pattern.replace(/\./g, '\\.').replace(/\*\*/g, '{{GLOBSTAR}}').replace(/\*/g, '[^/]*').replace(/\{\{GLOBSTAR\}\}/g, '.*') + '$'
@@ -46,9 +42,7 @@ function matchSegment(relativePath, name, pattern, rootOnly) {
     if (regex.test(name) || regex.test(relativePath)) return true;
   }
 
-  // path-segment matching: pattern must match a complete directory segment
   if (pattern.includes('/')) {
-    // pattern with / is a path pattern — match against relative path
     if (rootOnly) {
       return relativePath === pattern || relativePath.startsWith(pattern + '/');
     }
@@ -56,13 +50,10 @@ function matchSegment(relativePath, name, pattern, rootOnly) {
       || relativePath === pattern;
   }
 
-  // simple name: match any path segment exactly
   if (rootOnly) {
-    // root-only: first segment must match
     return relativePath.split('/')[0] === pattern;
   }
 
-  // match any segment in the path
   const segments = relativePath.split('/');
   return segments.includes(pattern);
 }
@@ -70,11 +61,8 @@ function matchSegment(relativePath, name, pattern, rootOnly) {
 function shouldIgnore(relativePath, name, ignorePatterns) {
   const { patterns, negations } = ignorePatterns;
 
-  // check against default ignores (exact segment match, not substring)
   if (DEFAULT_IGNORE.includes(name)) return true;
   if (name.startsWith('.') && name !== '.') return true;
-
-  // check negations first — if file is explicitly un-ignored, allow it
   if (negations.has(name) || negations.has(relativePath)) return false;
 
   for (const { pattern, rootOnly } of patterns) {

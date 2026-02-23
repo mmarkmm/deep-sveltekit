@@ -23,11 +23,8 @@ function extractRoutePath(filePath) {
 
   let route = '/' + match[1];
 
-  // convert SvelteKit params to standard notation
-  route = route.replace(/\[\.\.\.(\w+)\]/g, '*$1');    // [...rest] -> *rest
-  route = route.replace(/\[(\w+)\]/g, ':$1');           // [id] -> :id
-
-  // groups like (app) should be removed from the path
+  route = route.replace(/\[\.\.\.(\w+)\]/g, '*$1');
+  route = route.replace(/\[(\w+)\]/g, ':$1');
   route = route.replace(/\/\([^)]+\)/g, '');
 
   return route || '/';
@@ -40,7 +37,6 @@ function extractParams(routePath) {
   while ((m = paramRegex.exec(routePath)) !== null) {
     params.push(m[1]);
   }
-  // catch-all params
   const catchAll = routePath.match(/\*(\w+)/g);
   if (catchAll) {
     params.push(...catchAll.map(p => p.slice(1)));
@@ -51,7 +47,6 @@ function extractParams(routePath) {
 function detectHttpMethods(content) {
   const methods = [];
   for (const method of HTTP_METHODS) {
-    // match: export const GET = ..., export function GET(, export async function GET(
     const pattern = new RegExp(`export\\s+(?:const|let|function|async\\s+function)\\s+${method}\\b`);
     if (pattern.test(content)) {
       methods.push(method);
@@ -76,7 +71,6 @@ export function analyzeSvelteKitRoutes(files, analyzedFiles) {
     const routeType = ROUTE_FILES[fileName];
     if (!routeType) continue;
 
-    // must be under routes/ (path may or may not include src/ prefix depending on scan root)
     if (!file.path.match(/(?:^|\/)routes\//)) continue;
 
     const routePath = extractRoutePath(file.path);
@@ -105,7 +99,6 @@ export function analyzeSvelteKitRoutes(files, analyzedFiles) {
     routes.push(route);
   }
 
-  // sort by path for consistent output
   routes.sort((a, b) => a.path.localeCompare(b.path));
   return routes;
 }

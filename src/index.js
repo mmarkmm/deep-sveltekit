@@ -7,6 +7,9 @@ export { runInsights } from './insights/index.js';
 export { generateHTML } from './output/html.js';
 export { generateJSON, writeJSON } from './output/json.js';
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { scanDirectory } from './scanner.js';
 import { analyzeAll } from './analyzer/index.js';
 import { detectFramework } from './frameworks/detect.js';
@@ -26,13 +29,14 @@ export async function analyze(directory, options = {}) {
   }
 
   const graph = buildGraph(analyzed);
-  const insights = runInsights(graph, analyzed, routes);
+  const insights = runInsights(graph, analyzed, routes, framework);
   const totalFunctions = analyzed.reduce((sum, f) => sum + f.functions.length, 0);
 
   return {
     meta: {
       name: directory.split('/').pop(),
       root: directory,
+      version: (() => { try { const p = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'); return JSON.parse(readFileSync(p, 'utf-8')).version; } catch(e) { return '1.0.0'; } })(),
       framework,
       generatedAt: new Date().toISOString(),
     },

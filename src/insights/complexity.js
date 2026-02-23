@@ -42,11 +42,9 @@ export function findComplexityIssues(analyzedFiles, metrics) {
     }
   }
 
-  // sort most complex first
   complexFiles.sort((a, b) => b.complexity - a.complexity);
   complexFunctions.sort((a, b) => b.complexity - a.complexity);
 
-  // top hotspots combine complexity + maintainability
   const hotspots = buildHotspots(analyzedFiles);
 
   return {
@@ -64,7 +62,6 @@ function buildHotspots(analyzedFiles) {
     const m = file.metrics;
     if (!m) continue;
 
-    // score: higher complexity + lower maintainability = worse
     const complexityScore = (m.complexity || 0) / FILE_COMPLEXITY_THRESHOLD;
     const maintScore = m.maintainability != null ? (100 - m.maintainability) / 50 : 0;
     const sizeScore = (m.linesOfCode || 0) / 500;

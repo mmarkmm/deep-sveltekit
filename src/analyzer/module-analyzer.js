@@ -1,5 +1,3 @@
-// Extract import/export information from an AST
-
 function getSpecifierType(specifier) {
   switch (specifier.type) {
     case 'ImportDefaultSpecifier': return 'default';
@@ -59,7 +57,6 @@ export function extractModuleInfo(ast) {
   if (!ast?.body) return { imports, exports };
 
   for (const node of ast.body) {
-    // imports
     if (node.type === 'ImportDeclaration') {
       imports.push({
         source: node.source.value,
@@ -72,7 +69,6 @@ export function extractModuleInfo(ast) {
       });
     }
 
-    // export named with declaration: export function foo() {} / export const x = ...
     if (node.type === 'ExportNamedDeclaration' && node.declaration) {
       const names = extractExportNames(node.declaration);
       for (const { name, type } of names) {
@@ -84,8 +80,6 @@ export function extractModuleInfo(ast) {
       }
     }
 
-    // export named with specifiers: export { foo, bar as baz }
-    // or re-export: export { default as Foo } from './Foo.svelte'
     if (node.type === 'ExportNamedDeclaration' && !node.declaration && node.specifiers?.length) {
       for (const spec of node.specifiers) {
         exports.push({
@@ -96,7 +90,6 @@ export function extractModuleInfo(ast) {
         });
       }
 
-      // re-exports also count as imports (they create dependency edges)
       if (node.source) {
         imports.push({
           source: node.source.value,
@@ -111,7 +104,6 @@ export function extractModuleInfo(ast) {
       }
     }
 
-    // export default
     if (node.type === 'ExportDefaultDeclaration') {
       let type = 'default';
       if (node.declaration) {
@@ -126,7 +118,6 @@ export function extractModuleInfo(ast) {
       });
     }
 
-    // export * from './module'
     if (node.type === 'ExportAllDeclaration') {
       exports.push({
         name: node.exported?.name || '*',
@@ -135,7 +126,6 @@ export function extractModuleInfo(ast) {
         source: node.source.value
       });
 
-      // also creates a dependency edge
       imports.push({
         source: node.source.value,
         isReExport: true,

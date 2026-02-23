@@ -10,7 +10,6 @@ import { generateHTML } from './output/html.js';
 import { writeJSON } from './output/json.js';
 import { exec } from 'child_process';
 
-// ansi helpers
 const c = {
   bold: s => `\x1b[1m${s}\x1b[0m`,
   dim: s => `\x1b[2m${s}\x1b[0m`,
@@ -54,14 +53,12 @@ function parseArgs(args) {
       opts.depth = parseInt(args[++i], 10); i++; continue;
     }
 
-    // positional = directory
     if (!arg.startsWith('-')) {
       opts.directory = arg;
     }
     i++;
   }
 
-  // adjust output extension based on format
   if (opts.format === 'json' && opts.output === 'deep-sveltekit-report.html') {
     opts.output = 'deep-sveltekit-report.json';
   }
@@ -173,7 +170,7 @@ export async function run(args) {
   process.stdout.write(`  ${c.green('graph')} ${graph.nodes.length} nodes, ${graph.edges.length} edges\n`);
 
   // insights
-  const insights = runInsights(graph, analyzed, routes);
+  const insights = runInsights(graph, analyzed, routes, framework);
 
   // build report data
   const reportData = {
