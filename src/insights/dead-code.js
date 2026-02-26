@@ -46,12 +46,27 @@ export function findDeadExports(graph, analyzedFiles) {
     const usedCount = imported.size;
     const importers = importerCount.get(file.path)?.size || 0;
 
+    const internallyUsed = file.references instanceof Set
+      ? new Set(file.references)
+      : new Set();
+
+    if (file.calls) {
+      for (const call of file.calls) {
+        if (!call.callee) continue;
+        internallyUsed.add(call.callee);
+        // foo.bar() → also mark 'foo'
+        const root = call.callee.split('.')[0];
+        if (root) internallyUsed.add(root);
+      }
+    }
+
     for (const exp of exports) {
       const name = exp.name;
 
       if (name === 'default' && imported.has('default')) continue;
       if (imported.has(name)) continue;
       if (name === 'default' && usedCount > 0) continue;
+      if (internallyUsed.has(name)) continue;
 
       deadExports.push({
         file: file.path,

@@ -3,6 +3,8 @@ export function findCircularDependencies(graph) {
 
   for (const edge of graph.edges) {
     if (edge.external) continue;
+    // dynamic imports break the init-order cycle
+    if (edge.type === 'dynamic') continue;
     if (!adj.has(edge.source)) adj.set(edge.source, []);
     adj.get(edge.source).push(edge.target);
   }

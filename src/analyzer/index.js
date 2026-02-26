@@ -1,7 +1,7 @@
 import { parseFile } from './parser.js';
 import { extractModuleInfo } from './module-analyzer.js';
 import { extractFunctions } from './function-analyzer.js';
-import { extractCalls } from './call-analyzer.js';
+import { extractCalls, extractReferences } from './call-analyzer.js';
 import { dirname } from 'path';
 
 export function analyzeFile(scannedFile) {
@@ -30,6 +30,7 @@ export function analyzeFile(scannedFile) {
   const moduleInfo = extractModuleInfo(ast);
   const { functions, classes } = extractFunctions(ast, scannedFile.content);
   const calls = extractCalls(ast);
+  const references = extractReferences(ast);
 
   return {
     ...base,
@@ -38,6 +39,7 @@ export function analyzeFile(scannedFile) {
     functions,
     classes,
     calls,
+    references,
     parseError: false
   };
 }

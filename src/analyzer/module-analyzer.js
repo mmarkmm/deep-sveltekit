@@ -33,6 +33,23 @@ function detectDeclarationType(declaration) {
   }
 }
 
+function extractPatternNames(pattern) {
+  if (!pattern) return [];
+  if (pattern.type === 'Identifier') return [pattern.name];
+  if (pattern.type === 'ObjectPattern') {
+    return pattern.properties.flatMap(p => {
+      if (p.type === 'RestElement') return extractPatternNames(p.argument);
+      return extractPatternNames(p.value);
+    });
+  }
+  if (pattern.type === 'ArrayPattern') {
+    return pattern.elements.filter(Boolean).flatMap(e => extractPatternNames(e));
+  }
+  if (pattern.type === 'AssignmentPattern') return extractPatternNames(pattern.left);
+  if (pattern.type === 'RestElement') return extractPatternNames(pattern.argument);
+  return [];
+}
+
 function extractExportNames(declaration) {
   if (!declaration) return [];
 
@@ -41,13 +58,45 @@ function extractExportNames(declaration) {
   }
 
   if (declaration.type === 'VariableDeclaration') {
-    return declaration.declarations.map(d => ({
-      name: d.id?.name || '[destructured]',
-      type: detectDeclarationType(declaration)
-    }));
+    const type = detectDeclarationType(declaration);
+    return declaration.declarations.flatMap(d => {
+      const names = extractPatternNames(d.id);
+      return names.map(name => ({ name, type }));
+    });
   }
 
   return [];
+}
+
+function walkForDynamicImports(ast) {
+  const dynamicImports = [];
+  if (!ast) return dynamicImports;
+
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'ImportExpression' && node.source?.type === 'Literal') {
+      dynamicImports.push({
+        source: node.source.value,
+        isDynamic: true,
+        specifiers: [],
+        line: node.loc?.start?.line || 0
+      });
+    }
+    for (const key of Object.keys(node)) {
+      if (key === 'type' || key === 'loc' || key === 'start' || key === 'end') continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (item && typeof item === 'object' && item.type) visit(item);
+        }
+      } else if (child && typeof child === 'object' && child.type) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(ast);
+  return dynamicImports;
 }
 
 export function extractModuleInfo(ast) {
@@ -134,6 +183,10 @@ export function extractModuleInfo(ast) {
       });
     }
   }
+
+  // dynamic import() expressions
+  const dynamicImports = walkForDynamicImports(ast);
+  imports.push(...dynamicImports);
 
   return { imports, exports };
 }

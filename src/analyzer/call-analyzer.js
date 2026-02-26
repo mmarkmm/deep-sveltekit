@@ -70,6 +70,28 @@ function resolveCallee(node) {
   return null;
 }
 
+export function extractReferences(ast) {
+  const refs = new Set();
+  if (!ast) return refs;
+
+  walk.ancestor(ast, {
+    Identifier(node, _state, ancestors) {
+      const parent = ancestors[ancestors.length - 2];
+      if (!parent) return;
+
+      if (parent.type === 'MemberExpression' && parent.property === node && !parent.computed) return;
+      if (parent.type === 'ImportSpecifier' || parent.type === 'ExportSpecifier') return;
+      if (parent.type === 'Property' && parent.key === node && !parent.computed) return;
+      if (parent.type === 'VariableDeclarator' && parent.id === node) return;
+      if ((parent.type === 'FunctionDeclaration' || parent.type === 'ClassDeclaration') && parent.id === node) return;
+
+      refs.add(node.name);
+    }
+  });
+
+  return refs;
+}
+
 export function extractCalls(ast) {
   const calls = [];
   if (!ast) return calls;
