@@ -1,6 +1,6 @@
 {
   "name": "deep-sveltekit",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Static analysis and architecture map for SvelteKit projects",
   "type": "module",
   "bin": {

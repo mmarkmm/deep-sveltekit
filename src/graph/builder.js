@@ -1,9 +1,25 @@
-import { dirname, join, resolve, relative, extname } from 'path';
+import { dirname, join } from 'path';
+import { readFileSync } from 'fs';
 
 const RESOLVE_EXTENSIONS = ['.js', '.ts', '.mjs', '.jsx', '.tsx', '.svelte'];
 const INDEX_FILES = RESOLVE_EXTENSIONS.map(ext => 'index' + ext);
 
-function detectAliases(frameworkConfig, allFilePaths) {
+function stripJsonComments(raw) {
+  // Remove // and /* */ comments while preserving strings that contain //
+  return raw.replace(/("(?:[^"\\]|\\.)*")|\/\/.*$|\/\*[\s\S]*?\*\//gm, (m, str) => str || '');
+}
+
+function readJsonConfig(rootDir) {
+  for (const name of ['jsconfig.json', 'tsconfig.json']) {
+    try {
+      const raw = readFileSync(join(rootDir, name), 'utf8');
+      return JSON.parse(stripJsonComments(raw));
+    } catch { /* skip */ }
+  }
+  return null;
+}
+
+function detectAliases(frameworkConfig, allFilePaths, rootDir) {
   const aliases = {};
 
   const hasLibDir = [...allFilePaths].some(p => p.startsWith('lib/'));
@@ -14,10 +30,23 @@ function detectAliases(frameworkConfig, allFilePaths) {
   aliases['$app'] = null;
   aliases['$env'] = null;
 
+  if (rootDir) {
+    const config = readJsonConfig(rootDir);
+    const paths = config?.compilerOptions?.paths;
+    if (paths) {
+      for (const [alias, targets] of Object.entries(paths)) {
+        if (alias === '$lib/*' || alias === '$app/*' || alias === '$env/*') continue;
+        const cleanAlias = alias.replace(/\/\*$/, '');
+        const target = targets?.[0]?.replace(/\/\*$/, '').replace(/^\.\//, '');
+        if (target) aliases[cleanAlias] = target;
+      }
+    }
+  }
+
   const hasSrcDir = [...allFilePaths].some(p => p.startsWith('src/'));
   const srcPrefix = hasSrcDir ? 'src' : '.';
-  aliases['~'] = srcPrefix;
-  aliases['@'] = srcPrefix;
+  if (!aliases['~']) aliases['~'] = srcPrefix;
+  if (!aliases['@']) aliases['@'] = srcPrefix;
 
   return aliases;
 }
@@ -92,7 +121,7 @@ function classifyFile(filePath, inDegree, analyzedFile) {
 
 export function buildGraph(analyzedFiles, options = {}) {
   const allFilePaths = new Set(analyzedFiles.map(f => f.path));
-  const aliases = detectAliases(options.framework, allFilePaths);
+  const aliases = detectAliases(options.framework, allFilePaths, options.rootDir);
 
   const knownDirs = new Set();
   for (const f of analyzedFiles) {

@@ -42,8 +42,7 @@ function looksLikeServerOnly(file) {
   return file.imports.some(imp =>
     imp.source.includes('$env/static/private') ||
     imp.source.includes('$env/dynamic/private') ||
-    imp.source.includes('$lib/server') ||
-    /prisma|drizzle|database|supabase|redis|postgres|mysql|mongo/i.test(imp.source)
+    imp.source.includes('$lib/server')
   );
 }
 
@@ -68,22 +67,19 @@ function classifyFile(file) {
     if (ROUTE_FILES.has(name)) {
       return { status: 'correct', reason: 'Valid SvelteKit route file', category: 'route-valid' };
     }
+    // Colocated files in routes/ are valid — suggest, don't flag
     if (ext === '.svelte') {
-      const suggested = 'lib/components/' + name;
       return {
-        status: 'misplaced',
-        reason: 'Component in routes/ — should be in lib/components/',
-        suggestedPath: suggested,
+        status: 'suggestion',
+        reason: 'Component colocated with route — consider lib/components/ if reused',
+        suggestedPath: 'lib/components/' + name,
         category: 'route-component',
       };
     }
     if (['.js', '.ts', '.mjs'].includes(ext)) {
-      const isServer = looksLikeServerOnly(file);
-      const dir = isServer ? 'lib/server/' : 'lib/utils/';
       return {
-        status: 'misplaced',
-        reason: 'Utility file in routes/ — should be in ' + dir,
-        suggestedPath: dir + name,
+        status: 'suggestion',
+        reason: 'Utility colocated with route — consider lib/ if reused',
         category: 'route-utility',
       };
     }

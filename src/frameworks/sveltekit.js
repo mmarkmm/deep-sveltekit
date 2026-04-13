@@ -47,8 +47,13 @@ function extractParams(routePath) {
 function detectHttpMethods(content) {
   const methods = [];
   for (const method of HTTP_METHODS) {
-    const pattern = new RegExp(`export\\s+(?:const|let|function|async\\s+function)\\s+${method}\\b`);
-    if (pattern.test(content)) {
+    // Match: export const GET, export let GET, export function GET, export async function GET
+    // Also: export { GET } or export { GET as default }
+    const patterns = [
+      new RegExp(`export\\s+(?:const|let|function|async\\s+function)\\s+${method}\\b`),
+      new RegExp(`export\\s*\\{[^}]*\\b${method}\\b[^}]*\\}`),
+    ];
+    if (patterns.some(p => p.test(content))) {
       methods.push(method);
     }
   }

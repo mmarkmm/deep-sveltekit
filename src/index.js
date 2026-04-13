@@ -28,7 +28,7 @@ export async function analyze(directory, options = {}) {
     routes = analyzeSvelteKitRoutes(files, analyzed);
   }
 
-  const graph = buildGraph(analyzed);
+  const graph = buildGraph(analyzed, { rootDir: directory });
   const insights = runInsights(graph, analyzed, routes, framework);
   const totalFunctions = analyzed.reduce((sum, f) => sum + f.functions.length, 0);
 

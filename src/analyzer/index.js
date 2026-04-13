@@ -2,6 +2,7 @@ import { parseFile } from './parser.js';
 import { extractModuleInfo } from './module-analyzer.js';
 import { extractFunctions } from './function-analyzer.js';
 import { extractCalls, extractReferences } from './call-analyzer.js';
+import { calculateMetrics } from '../graph/metrics.js';
 import { dirname } from 'path';
 
 export function analyzeFile(scannedFile) {
@@ -13,6 +14,8 @@ export function analyzeFile(scannedFile) {
     size: scannedFile.size,
   };
 
+  // .d.ts and empty svelte scripts return null — not a parse error
+  const isTypeOnly = scannedFile.path.endsWith('.d.ts');
   const ast = parseFile(scannedFile.content, scannedFile.path);
 
   if (!ast) {
@@ -23,7 +26,8 @@ export function analyzeFile(scannedFile) {
       functions: [],
       classes: [],
       calls: [],
-      parseError: true
+      metrics: { complexity: 0, maintainability: 0, functionComplexity: [], linesOfCode: scannedFile.lines, linesOfLogic: 0 },
+      parseError: !isTypeOnly
     };
   }
 
@@ -31,6 +35,7 @@ export function analyzeFile(scannedFile) {
   const { functions, classes } = extractFunctions(ast, scannedFile.content);
   const calls = extractCalls(ast);
   const references = extractReferences(ast);
+  const metrics = calculateMetrics({ ast, content: scannedFile.content, path: scannedFile.path });
 
   return {
     ...base,
@@ -40,6 +45,7 @@ export function analyzeFile(scannedFile) {
     classes,
     calls,
     references,
+    metrics,
     parseError: false
   };
 }

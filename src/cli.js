@@ -166,7 +166,7 @@ export async function run(args) {
   }
 
   // build graph
-  const graph = buildGraph(analyzed);
+  const graph = buildGraph(analyzed, { rootDir });
   process.stdout.write(`  ${c.green('graph')} ${graph.nodes.length} nodes, ${graph.edges.length} edges\n`);
 
   // insights

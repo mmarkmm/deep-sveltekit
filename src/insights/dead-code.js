@@ -1,6 +1,6 @@
 const CONFIG_PATTERNS = /\.(config|rc)\.(js|ts|mjs|cjs)$|\.eslintrc|\.prettierrc|tailwind|postcss|vite\.config/;
 const TEST_PATTERNS = /\.(test|spec|e2e)\.(js|ts|jsx|tsx)$|__tests__/;
-const ROUTE_PATTERNS = /\+page\.|\/\+server\.|\/\+layout\.|\/\+error\.|\/page\.(tsx|jsx)|\/route\.(ts|js)|\/layout\.(tsx|jsx)/;
+const ROUTE_PATTERNS = /\+page\.|\/\+server\.|\/\+layout\.|\/\+error\./;
 
 export function findDeadExports(graph, analyzedFiles) {
   const importedSpecifiers = new Map();
@@ -117,11 +117,13 @@ function isEntryPoint(filePath) {
   if (TEST_PATTERNS.test(filePath)) return true;
   if (ROUTE_PATTERNS.test(filePath)) return true;
   if (filePath.endsWith('.d.ts')) return true;
-  if (filePath.match(/routes\//) && filePath.endsWith('.svelte')) return true;
-  if (filePath.match(/\+page\.server\.|^\+layout\.server\./)) return true;
-  if (filePath.match(/hooks\.(server|client)\.(js|ts)$/)) return true;
-  if (filePath.match(/^(bin|scripts)\//)) return true;
-  if (filePath.match(/(^|\/)index\.(js|ts|mjs)$/)) return true;
-  if (filePath.match(/^(src\/)?(main|app|server)\.(js|ts|mjs)$/)) return true;
+  // All files in routes/ directory are entry points (SvelteKit routing)
+  if (/routes\//.test(filePath)) return true;
+  if (/hooks\.(server|client)\.(js|ts)$/.test(filePath)) return true;
+  if (/^(bin|scripts)\//.test(filePath)) return true;
+  if (/(^|\/)index\.(js|ts|mjs)$/.test(filePath)) return true;
+  if (/^(src\/)?(main|app|server)\.(js|ts|mjs)$/.test(filePath)) return true;
+  // SvelteKit param matchers
+  if (/params\//.test(filePath)) return true;
   return false;
 }

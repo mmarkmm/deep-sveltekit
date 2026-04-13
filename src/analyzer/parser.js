@@ -59,16 +59,26 @@ export function stripTypeAnnotations(content) {
   return code;
 }
 
+// Svelte 5 runes are compiler-level macros that don't exist at runtime.
+// We inject stub declarations so acorn can parse them without errors.
+const SVELTE5_RUNE_DECLARATIONS = 'const $state=0,$derived=0,$effect=0,$props=0,$bindable=0,$inspect=0;\n';
+
 export function parseFile(content, filePath) {
+  // .d.ts files are ambient type declarations — no runtime code to analyze
+  if (filePath.endsWith('.d.ts')) return null;
+
   let code = content;
   const ext = filePath.split('.').pop();
+  let isSvelteTS = false;
 
   if (ext === 'svelte') {
+    isSvelteTS = /<script[^>]*lang=["']ts["']/.test(content);
     code = extractSvelteScript(content);
     if (!code.trim()) return null;
+    code = SVELTE5_RUNE_DECLARATIONS + code;
   }
 
-  if (['ts', 'tsx'].includes(ext)) {
+  if (['ts', 'tsx'].includes(ext) || isSvelteTS) {
     code = stripTypeAnnotations(code);
   }
 
